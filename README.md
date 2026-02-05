@@ -1,16 +1,99 @@
-# React + Vite
+# PTI Project
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+PTI(Pre-Trip Inspection) 데이터를 관리하고 대시보드를 제공하는 프로젝트입니다.
 
-Currently, two official plugins are available:
+## 🚀 시작하기
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+이 프로젝트를 로컬 환경에서 실행하기 위한 설치 가이드입니다.
 
-## React Compiler
+### 📋 사전 요구사항
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+시작하기 전에 다음 프로젝트가 설치되어 있어야 합니다:
+- [Node.js](https://nodejs.org/) (v18 이상 권장)
+- npm (Node.js와 함께 설치됨)
 
-## Expanding the ESLint configuration
+### ⚙️ 설치 및 초기 설정
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+1.  **저장소 복제**
+    ```bash
+    git clone <repository-url>
+    cd pti
+    ```
+
+2.  **의존성 패키지 설치**
+    ```bash
+    npm install
+    ```
+
+3.  **데이터 초기화**
+    Excel 파일(`SAMPLE.xlsx`)의 데이터를 JSON 형식으로 변환해야 합니다.
+    ```bash
+    node import_data.mjs
+    ```
+    이 명령을 실행하면 `src/initialData.json` 파일이 생성됩니다.
+
+### 💻 실행 방법
+
+설정이 완료되면 다음 명령어로 프로젝트를 실행할 수 있습니다.
+
+-   **개발 서버 실행**
+    ```bash
+    npm run dev
+    ```
+    브라우저에서 `http://localhost:5173` 접속이 가능합니다.
+
+-   **프로덕션 빌드**
+    ```bash
+    npm run build
+    ```
+
+-   **빌드 결과물 미리보기**
+    ```bash
+    npm run preview
+    ```
+
+-   **린트(Lint) 실행**
+    ```bash
+    npm run lint
+    ```
+
+## 📂 프로젝트 구조
+
+- `src/`: React 소스 코드 (컴포넌트, 상태 관리 등)
+- `public/`: 정적 애셋
+- `import_data.mjs`: Excel 데이터를 JSON으로 변환하는 유틸리티 스크립트
+- `SAMPLE.xlsx`: 원본 데이터 샘플
+
+## ✨ 주요 기능
+
+- **📊 실시간 대시보드**: PTI 현황(전체, 대기, 진행, 완료, 상차 등)을 시각화된 카드로 한눈에 파악할 수 있습니다.
+- **📋 PTI 레코드 관리**: 모든 PTI 데이터를 목록 형태로 확인하고 검색, 필터링, 개별 편집 및 삭제가 가능합니다.
+- **📥 Excel 데이터 임포트**: 외부 Excel 파일(`SAMPLE.xlsx`)을 시스템 데이터로 즉시 변환하여 사용할 수 있습니다.
+- **📋 대량 데이터 추가 (Bulk Paste)**: Excel 등에서 복사한 다량의 텍스트 데이터를 직접 붙여넣어 한 번에 여러 레코드를 생성할 수 있습니다.
+- **📈 통계 및 보고서**: 주간/월간 등 기간별 PTI 처리 현황을 요약된 보고서 형태로 제공합니다.
+- **♻️ 휴지통 및 복구**: 잘못 삭제된 데이터를 휴지통에서 확인하고 즉시 복구할 수 있는 기능을 지원합니다.
+- **📧 이메일 설정**: 알림 및 보고서 발송을 위한 이메일 서버 설정을 관리할 수 있습니다.
+
+## 💡 사용 방법
+
+1.  **데이터 준비 및 변환**
+    - `SAMPLE.xlsx` 파일에 데이터를 입력합니다.
+    - 터미널에서 `node import_data.mjs` 명령어를 실행하여 데이터를 시스템 메모리(`initialData.json`)로 로드합니다.
+
+2.  **대시보드 확인**
+    - 애플리케이션 접속 시 첫 화면에서 현재 PTI 진행 상태별 통계를 확인할 수 있습니다.
+
+3.  **PTI 목록 관리**
+    - 사이드바에서 **PTI List** 메뉴를 선택합니다.
+    - 상단의 검색창이나 필터를 사용하여 특정 컨테이너나 예약 번호를 찾을 수 있습니다.
+
+4.  **데이터 추가 (개별/대량)**
+    - **개별 추가**: `Add New` 버튼을 누르고 폼에 정보를 입력합니다.
+    - **대량 추가**: 폼 내의 `Bulk Paste` 버튼을 클릭한 후, Excel 시트에서 복사한 영역을 붙여넣기만 하면 자동으로 데이터가 파싱됩니다.
+
+5.  **보고서 확인 및 설정**
+    - **Reports**: 작업 효율 및 상태별 비중을 보고서 탭에서 확인합니다.
+    - **Settings**: 알림 수신을 위한 이메일 정보를 설정합니다.
+
+---
+© 2026 PTI Project
