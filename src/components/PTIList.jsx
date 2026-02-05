@@ -87,12 +87,12 @@ export default function PTIList({ records, onEdit, onDelete, onBulkDelete, onRef
         XLSX.writeFile(wb, `PTI_Report_${monthFilter === 'All' ? 'Total' : monthFilter + 'Month'}.xlsx`);
     };
 
-    const handleImportExcel = (e) => {
+    const handleImportExcel = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
         const reader = new FileReader();
-        reader.onload = (evt) => {
+        reader.onload = async (evt) => {
             try {
                 const bstr = evt.target.result;
                 const wb = XLSX.read(bstr, { type: 'binary' });
@@ -106,7 +106,7 @@ export default function PTIList({ records, onEdit, onDelete, onBulkDelete, onRef
                 }
 
                 const timestamp = Date.now();
-                data.forEach((row, index) => {
+                for (const [index, row] of data.entries()) {
                     const newRecord = {
                         id: `${timestamp}-${index}`,
                         shippingLine: row['LINE'] || '',
@@ -124,11 +124,11 @@ export default function PTIList({ records, onEdit, onDelete, onBulkDelete, onRef
                         ptiStatus: row['PTI Status'] || 'Pending',
                         remarks: row['REMARK'] || ''
                     };
-                    addPTIRecord(newRecord);
-                });
+                    await addPTIRecord(newRecord);
+                }
 
                 alert(`${data.length}개의 데이터를 성공적으로 가져왔습니다.`);
-                onRefresh();
+                await onRefresh();
                 e.target.value = ''; // Reset input
             } catch (error) {
                 console.error('Excel Import Error:', error);
@@ -147,19 +147,23 @@ export default function PTIList({ records, onEdit, onDelete, onBulkDelete, onRef
         }
     };
 
-    const handleBulkStatusChange = (newStatus) => {
+    const handleBulkStatusChange = async (newStatus) => {
         if (selectedBookingNos.size === 0) return;
         const recordsToUpdate = records.filter(r => selectedBookingNos.has(r.bookingNo));
-        recordsToUpdate.forEach(r => updatePTIRecord({ ...r, ptiStatus: newStatus }));
-        onRefresh();
+        for (const r of recordsToUpdate) {
+            await updatePTIRecord({ ...r, ptiStatus: newStatus });
+        }
+        await onRefresh();
         alert(`${selectedBookingNos.size}개 부킹의 상태가 '${newStatus}'(으)로 일괄 변경되었습니다.`);
     };
 
-    const handleBulkPickupChange = (newStatus) => {
+    const handleBulkPickupChange = async (newStatus) => {
         if (selectedBookingNos.size === 0) return;
         const recordsToUpdate = records.filter(r => selectedBookingNos.has(r.bookingNo));
-        recordsToUpdate.forEach(r => updatePTIRecord({ ...r, pickupStatus: newStatus }));
-        onRefresh();
+        for (const r of recordsToUpdate) {
+            await updatePTIRecord({ ...r, pickupStatus: newStatus });
+        }
+        await onRefresh();
         alert(`${selectedBookingNos.size}개 부킹의 픽업 상태가 '${newStatus}'(으)로 일괄 변경되었습니다.`);
     };
 
@@ -181,21 +185,23 @@ export default function PTIList({ records, onEdit, onDelete, onBulkDelete, onRef
         }
     };
 
-    const handleBulkSave = (batchRecords) => {
-        batchRecords.forEach(r => addPTIRecord(r));
-        onRefresh();
+    const handleBulkSave = async (batchRecords) => {
+        for (const r of batchRecords) {
+            await addPTIRecord(r);
+        }
+        await onRefresh();
         alert(`${batchRecords.length}개의 데이터가 등록되었습니다.`);
     };
 
-    const handleStatusUpdate = (record, newStatus) => {
-        updatePTIRecord({ ...record, ptiStatus: newStatus });
-        onRefresh();
+    const handleStatusUpdate = async (record, newStatus) => {
+        await updatePTIRecord({ ...record, ptiStatus: newStatus });
+        await onRefresh();
     };
 
-    const handlePickupToggle = (record) => {
+    const handlePickupToggle = async (record) => {
         const newStatus = record.pickupStatus === 'Picked Up' ? 'Not Picked Up' : 'Picked Up';
-        updatePTIRecord({ ...record, pickupStatus: newStatus });
-        onRefresh();
+        await updatePTIRecord({ ...record, pickupStatus: newStatus });
+        await onRefresh();
     };
 
     const toggleSort = (key) => {

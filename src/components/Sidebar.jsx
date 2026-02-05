@@ -72,12 +72,7 @@ export default function Sidebar({ currentView, setView }) {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '1rem' }}>
                     <button
                         onClick={() => {
-                            if (confirm('오전 9시 상태로 데이터를 초기화하시겠습니까?')) {
-                                // Since we modified initialData.json, we'll need to run the import script to get 'Pending' back
-                                // In this environment, the user might just prefer to know it works.
-                                localStorage.removeItem('pti_data');
-                                window.location.reload();
-                            }
+                            alert('SQLite 모드에서는 이 기능이 아직 지원되지 않습니다.');
                         }}
                         style={{
                             width: '100%',
@@ -100,10 +95,7 @@ export default function Sidebar({ currentView, setView }) {
                     </button>
                     <button
                         onClick={() => {
-                            if (confirm('오후 9시 10분 업무 마감 상태로 전환하시겠습니까?')) {
-                                localStorage.removeItem('pti_data');
-                                window.location.reload();
-                            }
+                            alert('SQLite 모드에서는 이 기능이 아직 지원되지 않습니다.');
                         }}
                         style={{
                             width: '100%',

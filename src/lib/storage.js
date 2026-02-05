@@ -1,76 +1,97 @@
-const STORAGE_KEY = 'pti_data';
+const API_URL = 'http://localhost:3001/api';
 
-export const getPTIRecords = () => {
+export const getPTIRecords = async () => {
     try {
-        const data = localStorage.getItem(STORAGE_KEY);
-        return data ? JSON.parse(data) : [];
+        const response = await fetch(`${API_URL}/pti`);
+        return await response.json();
     } catch (error) {
-        console.error('Error reading from localStorage', error);
+        console.error('Error fetching PTI records', error);
         return [];
     }
 };
 
-export const savePTIRecords = (records) => {
+export const addPTIRecord = async (record) => {
     try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+        const response = await fetch(`${API_URL}/pti`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(record)
+        });
+        return await response.json();
     } catch (error) {
-        console.error('Error saving to localStorage', error);
+        console.error('Error adding PTI record', error);
     }
 };
 
-export const addPTIRecord = (record) => {
-    const records = getPTIRecords();
-    const newRecords = [record, ...records];
-    savePTIRecords(newRecords);
-    return newRecords;
-};
-
-export const updatePTIRecord = (updatedRecord) => {
-    const records = getPTIRecords();
-    const newRecords = records.map(r => r.id === updatedRecord.id ? updatedRecord : r);
-    savePTIRecords(newRecords);
-    return newRecords;
-};
-
-export const deletePTIRecord = (id) => {
-    const records = getPTIRecords();
-    const newRecords = records.filter(r => r.id !== id);
-    savePTIRecords(newRecords);
-    return newRecords;
-};
-
-const STORAGE_TRASH_KEY = 'pti_trash';
-
-export const getTrashRecords = () => {
+export const updatePTIRecord = async (updatedRecord) => {
     try {
-        const data = localStorage.getItem(STORAGE_TRASH_KEY);
-        return data ? JSON.parse(data) : [];
+        const response = await fetch(`${API_URL}/pti/${updatedRecord.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updatedRecord)
+        });
+        return await response.json();
     } catch (error) {
+        console.error('Error updating PTI record', error);
+    }
+};
+
+export const deletePTIRecord = async (id) => {
+    try {
+        await fetch(`${API_URL}/pti/${id}`, { method: 'DELETE' });
+    } catch (error) {
+        console.error('Error deleting PTI record', error);
+    }
+};
+
+export const getTrashRecords = async () => {
+    try {
+        const response = await fetch(`${API_URL}/trash`);
+        return await response.json();
+    } catch (error) {
+        console.error('Error fetching trash records', error);
         return [];
     }
 };
 
-export const saveTrashRecords = (records) => {
+export const movePTIToTrash = async (recordsToMove) => {
     try {
-        localStorage.setItem(STORAGE_TRASH_KEY, JSON.stringify(records));
+        const ids = recordsToMove.map(r => r.id);
+        await fetch(`${API_URL}/trash/move`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids })
+        });
     } catch (error) {
-        console.error('Error saving to trash', error);
+        console.error('Error moving records to trash', error);
     }
 };
 
-export const movePTIToTrash = (recordsToMove) => {
-    const trash = getTrashRecords();
-    const timestamp = new Date().toISOString();
-    const trashItems = recordsToMove.map(r => ({ ...r, deletedAt: timestamp }));
-    saveTrashRecords([...trashItems, ...trash]);
+export const restorePTIRecords = async (ids) => {
+    try {
+        await fetch(`${API_URL}/trash/restore`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids })
+        });
+    } catch (error) {
+        console.error('Error restoring records', error);
+    }
 };
 
-const EMAIL_SETTINGS_KEY = 'pti_email_settings';
-
-export const getEmailSettings = () => {
+export const clearTrash = async () => {
     try {
-        const data = localStorage.getItem(EMAIL_SETTINGS_KEY);
-        // Default template and rules
+        await fetch(`${API_URL}/trash/clear`, { method: 'DELETE' });
+    } catch (error) {
+        console.error('Error clearing trash', error);
+    }
+};
+
+export const getEmailSettings = async () => {
+    try {
+        const response = await fetch(`${API_URL}/settings/email`);
+        const data = await response.json();
+
         const defaultSettings = {
             recipients: [
                 { id: '1', matchType: 'Location', matchValue: 'SNCT', emailType: 'To', emailAddress: 'ops@snct.com' },
@@ -87,15 +108,21 @@ export const getEmailSettings = () => {
                 body: `Dear Team,\n\nPlease process the following PTI request:\n\nCustomer: {customer}\nBooking No: {bookingNo}\nQty: {qty} units\nContainer No: {containerNo}\nSize: {size}\nTemp: {temperature}\nVent: {vent}\nPickup Date: {pickupDate}\n\nThank you.\n`
             }
         };
-        return data ? { ...defaultSettings, ...JSON.parse(data) } : defaultSettings;
+
+        return data ? { ...defaultSettings, ...data } : defaultSettings;
     } catch (error) {
+        console.error('Error fetching email settings', error);
         return { recipients: [], template: { subject: '', body: '' } };
     }
 };
 
-export const saveEmailSettings = (settings) => {
+export const saveEmailSettings = async (settings) => {
     try {
-        localStorage.setItem(EMAIL_SETTINGS_KEY, JSON.stringify(settings));
+        await fetch(`${API_URL}/settings/email`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(settings)
+        });
     } catch (error) {
         console.error('Error saving email settings', error);
     }

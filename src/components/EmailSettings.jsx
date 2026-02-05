@@ -14,11 +14,15 @@ export default function EmailSettings() {
     const [editingId, setEditingId] = useState(null);
 
     useEffect(() => {
-        setSettings(getEmailSettings());
+        const load = async () => {
+            const data = await getEmailSettings();
+            setSettings(data);
+        };
+        load();
     }, []);
 
-    const handleSave = () => {
-        saveEmailSettings(settings);
+    const handleSave = async () => {
+        await saveEmailSettings(settings);
         alert('Settings saved successfully!');
     };
 

@@ -36,22 +36,25 @@ export default function PTIForm({ record, onClose, onSave }) {
     useEffect(() => {
         if (record) {
             // Edit mode: populate form with the group's containers
-            const allRecords = getPTIRecords();
-            const group = allRecords.filter(r => r.bookingNo === record.bookingNo);
+            const load = async () => {
+                const allRecords = await getPTIRecords();
+                const group = allRecords.filter(r => r.bookingNo === record.bookingNo);
 
-            setFormData({
-                ...record,
-                pickupDate: record.pickupDate || getTwoDaysLater(),
-                vent: record.vent || 'CLOSED'
-            });
+                setFormData({
+                    ...record,
+                    pickupDate: record.pickupDate || getTwoDaysLater(),
+                    vent: record.vent || 'CLOSED'
+                });
 
-            const initialList = group.length > 0
-                ? group.map(r => ({ no: r.containerNo || '', size: r.size || '40RE' }))
-                : [{ no: record.containerNo || '', size: record.size || '40RE' }];
+                const initialList = group.length > 0
+                    ? group.map(r => ({ no: r.containerNo || '', size: r.size || '40RE' }))
+                    : [{ no: record.containerNo || '', size: record.size || '40RE' }];
 
-            setContainerList(initialList);
-            setQty20(initialList.filter(c => c.size === '20RE').length);
-            setQty40(initialList.filter(c => c.size === '40RE').length);
+                setContainerList(initialList);
+                setQty20(initialList.filter(c => c.size === '20RE').length);
+                setQty40(initialList.filter(c => c.size === '40RE').length);
+            };
+            load();
         } else {
             // New mode defaults
             setFormData(prev => ({
@@ -137,7 +140,7 @@ export default function PTIForm({ record, onClose, onSave }) {
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
 
         // Validate Required Fields
@@ -160,7 +163,7 @@ export default function PTIForm({ record, onClose, onSave }) {
         }
 
         // Check for duplicate Booking No
-        const existingRecords = getPTIRecords();
+        const existingRecords = await getPTIRecords();
         const isEditing = !!record;
 
         // Find if this booking number already exists (excluding the current record if editing)
@@ -221,8 +224,8 @@ export default function PTIForm({ record, onClose, onSave }) {
         onSave(recordsToSave.length === 1 && !record ? recordsToSave[0] : recordsToSave);
     };
 
-    const handleSendEmail = () => {
-        const settings = getEmailSettings();
+    const handleSendEmail = async () => {
+        const settings = await getEmailSettings();
         const recipients = [];
         const cc = [];
 
@@ -359,7 +362,7 @@ export default function PTIForm({ record, onClose, onSave }) {
                                 autoComplete="off"
                             />
                             <datalist id="customer-history">
-                                {[...new Set(getPTIRecords().map(r => r.customer).filter(Boolean))].map(c => (
+                                {[...new Set(data.map(r => r.customer).filter(Boolean))].map(c => (
                                     <option key={c} value={c} />
                                 ))}
                             </datalist>

@@ -8,7 +8,11 @@ export default function Reports() {
     const [snapshotTime, setSnapshotTime] = useState('21:10');
 
     useEffect(() => {
-        setData(getPTIRecords());
+        const load = async () => {
+            const records = await getPTIRecords();
+            setData(records);
+        };
+        load();
     }, []);
 
     const filteredData = data.filter(r => r.requestDate === selectedDate);
