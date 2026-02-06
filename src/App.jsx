@@ -1,21 +1,20 @@
 import { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import PTIList from './components/PTIList';
 import PTIForm from './components/PTIForm';
 import EmailSettings from './components/EmailSettings';
 import { getPTIRecords, addPTIRecord, updatePTIRecord, deletePTIRecord, movePTIToTrash } from './lib/storage';
-import initialData from './initialData.json';
-
 import Reports from './components/Reports';
 import TrashView from './components/Trash';
+import CustomerRequest from './pages/CustomerRequest';
 
-function App() {
+function AdminMain() {
   const [currentView, setCurrentView] = useState('dashboard');
   const [data, setData] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editingRecord, setEditingRecord] = useState(null);
-  const [lastDeletedData, setLastDeletedData] = useState(null);
   const [showUndo, setShowUndo] = useState(false);
 
   const loadData = async () => {
@@ -29,18 +28,20 @@ function App() {
 
   const handleSave = async (recordOrRecords) => {
     const timestamp = Date.now();
+    const recordsToSave = Array.isArray(recordOrRecords) ? recordOrRecords : [recordOrRecords];
 
     if (editingRecord) {
-      // Editing is now just updating the record with the same ID
-      await updatePTIRecord({ ...editingRecord, ...recordOrRecords });
-    } else {
-      if (Array.isArray(recordOrRecords)) {
-        for (const [index, rec] of recordOrRecords.entries()) {
-          await addPTIRecord({ ...rec, id: `${timestamp}-${index}` });
-        }
-      } else {
-        await addPTIRecord({ ...recordOrRecords, id: timestamp.toString() });
+      const recordsToDelete = data.filter(r => r.bookingNo === editingRecord.bookingNo);
+      for (const r of recordsToDelete) {
+        await deletePTIRecord(r.id);
       }
+    }
+
+    for (const [index, rec] of recordsToSave.entries()) {
+      await addPTIRecord({
+        ...rec,
+        id: `${timestamp}-${index}`
+      });
     }
 
     await loadData();
@@ -63,13 +64,6 @@ function App() {
       await movePTIToTrash(recordsToDelete);
       await loadData();
     }
-  };
-
-  const handleUndo = async () => {
-    // Note: handleUndo logic might need more adjustment if lastDeletedData isn't tracked the same way
-    // For now, let's keep it simple or remove if trash handles it
-    if (!lastDeletedData) return;
-    // ...
   };
 
   const handleEdit = (record) => {
@@ -126,7 +120,6 @@ function App() {
         <Sidebar currentView={currentView} setView={setCurrentView} />
       </div>
 
-      {/* Resizable Divider (Partition Ruler) */}
       <div
         onMouseDown={startResizing}
         style={{
@@ -134,16 +127,12 @@ function App() {
           cursor: 'col-resize',
           background: isResizing ? 'var(--primary)' : 'rgba(255,255,255,0.03)',
           transition: 'background 0.2s',
-          zIndex: 10,
-          '&:hover': { background: 'rgba(59,130,246,0.3)' }
+          zIndex: 10
         }}
       />
 
       <main className="main-content" style={{ flex: 1, overflowY: 'auto' }}>
-        {currentView === 'dashboard' && (
-          <Dashboard stats={getStats()} />
-        )}
-
+        {currentView === 'dashboard' && <Dashboard stats={getStats()} />}
         {currentView === 'pti-list' && (
           <PTIList
             records={data}
@@ -154,57 +143,10 @@ function App() {
             onAddNew={handleAddNew}
           />
         )}
-
-        {currentView === 'reports' && (
-          <Reports />
-        )}
-
-        {currentView === 'settings' && (
-          <EmailSettings />
-        )}
-
-        {currentView === 'trash' && (
-          <TrashView onRefresh={loadData} />
-        )}
+        {currentView === 'reports' && <Reports />}
+        {currentView === 'settings' && <EmailSettings />}
+        {currentView === 'trash' && <TrashView onRefresh={loadData} />}
       </main>
-
-
-      {showUndo && (
-        <div style={{
-          position: 'fixed',
-          bottom: '2.5rem',
-          right: '2.5rem',
-          background: '#1e293b',
-          color: '#fff',
-          padding: '1.25rem 2rem',
-          borderRadius: '12px',
-          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.4)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '2rem',
-          zIndex: 9999,
-          border: '2px solid var(--primary)',
-          animation: 'fadeIn 0.3s ease'
-        }}>
-          <span style={{ fontSize: '1rem', fontWeight: 600 }}>데이터가 삭제되었습니다.</span>
-          <button
-            onClick={handleUndo}
-            style={{
-              background: 'var(--primary)',
-              border: 'none',
-              color: 'white',
-              padding: '0.6rem 1.2rem',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              fontWeight: 800,
-              fontSize: '0.9rem',
-              boxShadow: '0 4px 10px rgba(59, 130, 246, 0.5)'
-            }}
-          >
-            삭제 취소 (복구)
-          </button>
-        </div>
-      )}
 
       {showForm && (
         <PTIForm
@@ -215,6 +157,18 @@ function App() {
         />
       )}
     </div>
+  );
+}
+
+function App() {
+  return (
+    <Router>
+      <Routes>
+        <Route path="/" element={<AdminMain />} />
+        <Route path="/request" element={<CustomerRequest />} />
+        <Route path="*" element={<Navigate to="/" />} />
+      </Routes>
+    </Router>
   );
 }
 

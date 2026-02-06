@@ -68,8 +68,32 @@ export default function Sidebar({ currentView, setView }) {
                         Online
                     </div>
                 </div>
-
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '1rem' }}>
+                    <button
+                        onClick={() => {
+                            const link = `${window.location.origin}/request`;
+                            navigator.clipboard.writeText(link);
+                            alert('고객용 신청 페이지 링크가 복제되었습니다:\n' + link);
+                        }}
+                        style={{
+                            width: '100%',
+                            padding: '0.6rem',
+                            borderRadius: '8px',
+                            background: 'rgba(16, 185, 129, 0.1)',
+                            border: '1px solid rgba(16, 185, 129, 0.2)',
+                            color: '#34d399',
+                            fontSize: '0.8rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '0.5rem'
+                        }}
+                    >
+                        <Mail size={14} />
+                        Copy Customer Link
+                    </button>
                     <button
                         onClick={() => {
                             alert('SQLite 모드에서는 이 기능이 아직 지원되지 않습니다.');

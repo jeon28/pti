@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { X, Save, Plus, Trash2, Mail } from 'lucide-react';
 import { getEmailSettings, getPTIRecords } from '../lib/storage';
 
-export default function PTIForm({ record, onClose, onSave }) {
+export default function PTIForm({ record, data, onClose, onSave, standalone = false }) {
     // Helpers for defaults
     const getToday = () => new Date().toISOString().split('T')[0];
     const getTwoDaysLater = () => {
@@ -24,6 +24,7 @@ export default function PTIForm({ record, onClose, onSave }) {
         temperature: '',
         vent: 'CLOSED',
         humidity: '',
+        email: '',
         remarks: ''
     });
 
@@ -32,6 +33,8 @@ export default function PTIForm({ record, onClose, onSave }) {
     const [qty40, setQty40] = useState(1);
     const [containerList, setContainerList] = useState([{ no: '', size: '40RE' }]); // [{no, size}]
     const [isManualQuantity, setIsManualQuantity] = useState(false);
+    const [isSmartPasteOpen, setIsSmartPasteOpen] = useState(false);
+    const [smartText, setSmartText] = useState('');
 
     useEffect(() => {
         if (record) {
@@ -133,11 +136,119 @@ export default function PTIForm({ record, onClose, onSave }) {
         const newList = [...containerList];
         newList[index] = { ...newList[index], no: value };
         setContainerList(newList);
+
+        // Auto-update status: If at least one container number is entered, set to 'In Progress'
+        // If all are empty, set to 'Pending'. (Don't auto-change if it's already Pass or Cancelled)
+        setFormData(prev => {
+            if (prev.ptiStatus === 'Pass' || prev.ptiStatus === 'Cancelled') return prev;
+
+            const hasAnyNo = newList.some(c => c.no && c.no.trim().length > 0);
+            return {
+                ...prev,
+                ptiStatus: hasAnyNo ? 'In Progress' : 'Pending'
+            };
+        });
+    };
+
+    const handleSmartPaste = (text) => {
+        if (!text) return;
+        const newData = { ...formData };
+
+        // 1. Booking No: HASLK + 11 digits or SNKO + 12 digits
+        const bookingMatch = text.match(/(HASLK\d{11}|SNKO\d{12})/i);
+        if (bookingMatch) {
+            newData.bookingNo = bookingMatch[0].toUpperCase();
+        }
+
+        // 2. Size QTY: 40RF X 1, 20RF 1대, 4** X 수량, 2*** X 수량
+        // Improved regex to be more specific and avoid accidental matches with temperature or dates
+        const qty40Match = text.match(/(?:40(?:RF|RE|'|FT)?|45(?:RF|RE|'|FT)?)\s*(?:[xX*:]|[대|UNIT|개])?\s*([1-9]|10|12|15)\b/i);
+        if (qty40Match) {
+            const q = Math.min(parseInt(qty40Match[1], 10), 15); // Safety cap at 15
+            setQty40(q);
+            adjustContainerList(qty20, q);
+        } else if (!text.match(/(?:20(?:RF|RE|'|FT)?|22(?:RF|RE|'|FT)?)/i)) {
+            // If No 40' info found AND no 20' info found either, default to 1 unit of 40'
+            // This satisfies "1개를 디폴트로 나오게 해줘"
+            setQty40(1);
+            setQty20(0);
+            adjustContainerList(0, 1);
+        }
+
+        const qty20Match = text.match(/(?:20(?:RF|RE|'|FT)?|22(?:RF|RE|'|FT)?)\s*(?:[xX*:]|[대|UNIT|개])?\s*([1-9]|10|12|15)\b/i);
+        if (qty20Match) {
+            const q = Math.min(parseInt(qty20Match[1], 10), 15); // Safety cap at 15
+            setQty20(q);
+            const currentQty40 = qty40Match ? Math.min(parseInt(qty40Match[1], 10), 15) : qty40;
+            adjustContainerList(q, currentQty40);
+        }
+
+        // 3. Temp: Temp **.00, *, -**, **도, +**, -**
+        let foundTemp = null;
+
+        // Priority 1: Explicit labels like "Temp: -18" or "온도 20"
+        const tempLabeledMatch = text.match(/(?:Temp|온도)\s*[:=]?\s*([+-]?\d+(?:\.\d+)?)/i);
+        // Priority 2: Numbers with units like "15도", "25'C", "20C"
+        const tempUnitMatch = text.match(/\b([+-]?\d{1,2}(?:\.\d+)?)\s*(?:도|'C|C|°C)\b/i);
+        // Priority 3: Clearly signed numbers like "+5" or "-18" (excluding those that might be part of dates)
+        const tempSignedMatch = text.match(/(?<![\d/-])[+-]\d{1,2}(?:\.\d+)?(?!\d)/);
+
+        if (tempLabeledMatch) foundTemp = tempLabeledMatch[1];
+        else if (tempUnitMatch) foundTemp = tempUnitMatch[1];
+        else if (tempSignedMatch) foundTemp = tempSignedMatch[0];
+
+        if (foundTemp) {
+            // Remove + sign for display if needed, or keep it as user requested
+            newData.temperature = foundTemp;
+        }
+
+        // 4. VENT: Close, **%, 0%, 환기구, 개폐구
+        const ventMatch = text.match(/(?:VENT|환기구|개폐구|환기|VENTILATION)\s*[:=]?\s*(CLOSE|CLOSED|OPEN|\d+)\s*%?/i);
+        if (ventMatch) {
+            const val = ventMatch[1].toUpperCase();
+            if (val === 'CLOSE' || val === 'CLOSED' || val === '0') {
+                newData.vent = 'CLOSED';
+            } else {
+                newData.vent = val;
+            }
+        } else if (text.match(/CLOSE|CLOSED/i)) {
+            newData.vent = 'CLOSED';
+        }
+
+        // 5. Pickup Date: YYYY.MM.DD, YY/MM/DD, MM/DD
+        const dateMatch = text.match(/\b(\d{2,4})[./-](\d{1,2})[./-](\d{1,2})\b/);
+        if (dateMatch) {
+            let [_, y, m, d] = dateMatch;
+            if (y.length === 2) y = "20" + y;
+            newData.pickupDate = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+        } else {
+            const shortDateMatch = text.match(/\b(\d{1,2})[./-](\d{1,2})\b/);
+            if (shortDateMatch) {
+                const year = new Date().getFullYear();
+                newData.pickupDate = `${year}-${shortDateMatch[1].padStart(2, '0')}-${shortDateMatch[2].padStart(2, '0')}`;
+            }
+        }
+
+        setFormData(newData);
+        setSmartText('');
+        setIsSmartPasteOpen(false);
     };
 
     const handleChange = (e) => {
         const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
+        setFormData(prev => {
+            const next = { ...prev, [name]: value };
+
+            // Auto-populate email when customer is selected
+            if (name === 'customer' && value && data) {
+                const recentRecord = data.find(r => r.customer?.toLowerCase() === value.toLowerCase() && r.email);
+                if (recentRecord) {
+                    next.email = recentRecord.email;
+                }
+            }
+
+            return next;
+        });
     };
 
     const handleSubmit = async (e) => {
@@ -242,6 +353,14 @@ export default function PTIForm({ record, onClose, onSave }) {
             }
         });
 
+        // Add the customer's email from the form to CC
+        if (formData.email) {
+            const extraEmails = formData.email.split(/[,;]/).map(e => e.trim()).filter(Boolean);
+            extraEmails.forEach(e => {
+                if (!cc.includes(e)) cc.push(e);
+            });
+        }
+
         if (recipients.length === 0 && cc.length === 0) {
             alert('No matching email rules found. Please check Email Settings.');
             return;
@@ -286,7 +405,7 @@ export default function PTIForm({ record, onClose, onSave }) {
     };
 
     return (
-        <div style={{
+        <div style={standalone ? { width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' } : {
             position: 'fixed',
             top: 0, left: 0, right: 0, bottom: 0,
             background: 'rgba(0,0,0,0.5)',
@@ -300,6 +419,17 @@ export default function PTIForm({ record, onClose, onSave }) {
                 <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--card-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <h2 style={{ margin: 0 }}>{record ? 'Edit PTI Record' : 'New PTI Request'}</h2>
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <button onClick={() => setIsSmartPasteOpen(!isSmartPasteOpen)} style={{
+                            background: 'rgba(16, 185, 129, 0.1)',
+                            border: '1px solid rgba(16, 185, 129, 0.3)',
+                            color: '#34d399',
+                            cursor: 'pointer',
+                            padding: '0.5rem 1rem',
+                            borderRadius: '8px',
+                            fontWeight: 600
+                        }}>
+                            스마트 입력
+                        </button>
                         <button onClick={handleSendEmail} style={{
                             background: 'rgba(59, 130, 246, 0.1)',
                             border: '1px solid rgba(59, 130, 246, 0.3)',
@@ -315,13 +445,40 @@ export default function PTIForm({ record, onClose, onSave }) {
                             <Mail size={18} />
                             Send Outlook Email
                         </button>
-                        <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}>
-                            <X size={24} />
-                        </button>
+                        {!standalone && (
+                            <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                                <X size={24} />
+                            </button>
+                        )}
                     </div>
                 </div>
 
                 <form onSubmit={handleSubmit} style={{ padding: '2rem' }}>
+                    {isSmartPasteOpen && (
+                        <div style={{ marginBottom: '1.5rem', background: 'rgba(16, 185, 129, 0.05)', padding: '1rem', borderRadius: '12px', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+                            <label style={{ display: 'block', marginBottom: '0.5rem', color: '#34d399', fontSize: '0.85rem', fontWeight: 600 }}>텍스트 붙여넣기 (내용을 복사해서 넣어주세요)</label>
+                            <textarea
+                                value={smartText}
+                                onChange={(e) => {
+                                    setSmartText(e.target.value);
+                                    handleSmartPaste(e.target.value);
+                                }}
+                                placeholder="이메일이나 메시지 내용을 여기에 붙여넣으세요..."
+                                style={{
+                                    width: '100%',
+                                    height: '80px',
+                                    background: 'rgba(0,0,0,0.2)',
+                                    border: '1px solid rgba(255,255,255,0.1)',
+                                    borderRadius: '8px',
+                                    padding: '0.5rem',
+                                    fontSize: '0.8rem',
+                                    color: 'white',
+                                    resize: 'none'
+                                }}
+                            />
+                            <p style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>* 부킹번호, 수량, 온도, 벤동, 픽업일 등을 자동으로 인식하여 입력합니다.</p>
+                        </div>
+                    )}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
 
                         {/* Location */}
@@ -336,21 +493,13 @@ export default function PTIForm({ record, onClose, onSave }) {
                             </select>
                         </div>
 
-                        {/* Booking & Customer - Prioritized */}
-                        <div>
-                            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Shipping Line</label>
-                            <select name="shippingLine" value={formData.shippingLine} onChange={handleChange} required>
-                                <option value="SKR">SKR</option>
-                                <option value="HAL">HAL</option>
-                            </select>
-                        </div>
-
-                        {/* Booking & Customer */}
+                        {/* Booking No - Now in place of Shipping Line */}
                         <div>
                             <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Booking No *</label>
-                            <input name="bookingNo" value={formData.bookingNo} onChange={handleChange} required placeholder={formData.shippingLine === 'HAL' ? 'HASLK...' : 'SNKO...'} />
+                            <input name="bookingNo" value={formData.bookingNo} onChange={handleChange} required placeholder="Booking No (SNKO... or HASLK...)" />
                         </div>
 
+                        {/* Customer */}
                         <div>
                             <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Customer</label>
                             <input
@@ -366,6 +515,18 @@ export default function PTIForm({ record, onClose, onSave }) {
                                     <option key={c} value={c} />
                                 ))}
                             </datalist>
+                        </div>
+
+                        {/* Customer Email */}
+                        <div>
+                            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Customer Email (for CC)</label>
+                            <input
+                                name="email"
+                                value={formData.email}
+                                onChange={handleChange}
+                                placeholder="customer@example.com"
+                            />
+                            <p style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: '0.3rem' }}>* Multiple emails can be separated by commas</p>
                         </div>
 
                         {/* Container Details & Input + Statuses */}

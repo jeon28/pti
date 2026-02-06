@@ -32,7 +32,9 @@ db.exec(`
     pickupStatus TEXT,
     pickupDate TEXT,
     temperature TEXT,
-    vent TEXT
+    vent TEXT,
+    humidity TEXT,
+    email TEXT
   );
 
   CREATE TABLE IF NOT EXISTS trash_records (
@@ -49,6 +51,8 @@ db.exec(`
     pickupDate TEXT,
     temperature TEXT,
     vent TEXT,
+    humidity TEXT,
+    email TEXT,
     deletedAt TEXT
   );
 
@@ -58,6 +62,20 @@ db.exec(`
   );
 `);
 
+try {
+    db.prepare("ALTER TABLE pti_records ADD COLUMN humidity TEXT").run();
+} catch (e) { }
+try {
+    db.prepare("ALTER TABLE pti_records ADD COLUMN email TEXT").run();
+} catch (e) { }
+
+try {
+    db.prepare("ALTER TABLE trash_records ADD COLUMN humidity TEXT").run();
+} catch (e) { }
+try {
+    db.prepare("ALTER TABLE trash_records ADD COLUMN email TEXT").run();
+} catch (e) { }
+
 // Seed initial data if empty
 const count = db.prepare('SELECT COUNT(*) as count FROM pti_records').get().count;
 if (count === 0) {
@@ -65,11 +83,11 @@ if (count === 0) {
     if (fs.existsSync(initialDataPath)) {
         const initialData = JSON.parse(fs.readFileSync(initialDataPath, 'utf8'));
         const insert = db.prepare(`
-            INSERT INTO pti_records (id, shippingLine, customer, bookingNo, size, containerNo, location, requestDate, ptiStatus, pickupStatus, pickupDate, temperature, vent)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO pti_records (id, shippingLine, customer, bookingNo, size, containerNo, location, requestDate, ptiStatus, pickupStatus, pickupDate, temperature, vent, humidity, email)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
         const insertMany = db.transaction((records) => {
-            for (const r of records) insert.run(r.id, r.shippingLine, r.customer, r.bookingNo, r.size, r.containerNo, r.location, r.requestDate, r.ptiStatus, r.pickupStatus, r.pickupDate, r.temperature, r.vent);
+            for (const r of records) insert.run(r.id, r.shippingLine, r.customer, r.bookingNo, r.size, r.containerNo, r.location, r.requestDate, r.ptiStatus, r.pickupStatus, r.pickupDate, r.temperature, r.vent, r.humidity, r.email);
         });
         insertMany(initialData);
         console.log('Seeded initial data into SQLite');
@@ -85,10 +103,10 @@ app.get('/api/pti', (req, res) => {
 app.post('/api/pti', (req, res) => {
     const record = req.body;
     const insert = db.prepare(`
-        INSERT INTO pti_records (id, shippingLine, customer, bookingNo, size, containerNo, location, requestDate, ptiStatus, pickupStatus, pickupDate, temperature, vent)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO pti_records (id, shippingLine, customer, bookingNo, size, containerNo, location, requestDate, ptiStatus, pickupStatus, pickupDate, temperature, vent, humidity, email)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    insert.run(record.id, record.shippingLine, record.customer, record.bookingNo, record.size, record.containerNo, record.location, record.requestDate, record.ptiStatus, record.pickupStatus, record.pickupDate, record.temperature, record.vent);
+    insert.run(record.id, record.shippingLine, record.customer, record.bookingNo, record.size, record.containerNo, record.location, record.requestDate, record.ptiStatus, record.pickupStatus, record.pickupDate, record.temperature, record.vent, record.humidity, record.email);
     res.status(201).json(record);
 });
 
@@ -97,10 +115,10 @@ app.put('/api/pti/:id', (req, res) => {
     const record = req.body;
     const update = db.prepare(`
         UPDATE pti_records 
-        SET shippingLine = ?, customer = ?, bookingNo = ?, size = ?, containerNo = ?, location = ?, requestDate = ?, ptiStatus = ?, pickupStatus = ?, pickupDate = ?, temperature = ?, vent = ?
+        SET shippingLine = ?, customer = ?, bookingNo = ?, size = ?, containerNo = ?, location = ?, requestDate = ?, ptiStatus = ?, pickupStatus = ?, pickupDate = ?, temperature = ?, vent = ?, humidity = ?, email = ?
         WHERE id = ?
     `);
-    update.run(record.shippingLine, record.customer, record.bookingNo, record.size, record.containerNo, record.location, record.requestDate, record.ptiStatus, record.pickupStatus, record.pickupDate, record.temperature, record.vent, id);
+    update.run(record.shippingLine, record.customer, record.bookingNo, record.size, record.containerNo, record.location, record.requestDate, record.ptiStatus, record.pickupStatus, record.pickupDate, record.temperature, record.vent, record.humidity, record.email, id);
     res.json(record);
 });
 
@@ -119,21 +137,21 @@ app.get('/api/trash', (req, res) => {
 app.post('/api/trash/move', (req, res) => {
     const { ids } = req.body;
     const timestamp = new Date().toISOString();
-    
+
     const moveTransaction = db.transaction((recordIds) => {
         for (const id of recordIds) {
             const record = db.prepare('SELECT * FROM pti_records WHERE id = ?').get(id);
             if (record) {
                 const insertTrash = db.prepare(`
-                    INSERT INTO trash_records (id, shippingLine, customer, bookingNo, size, containerNo, location, requestDate, ptiStatus, pickupStatus, pickupDate, temperature, vent, deletedAt)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO trash_records (id, shippingLine, customer, bookingNo, size, containerNo, location, requestDate, ptiStatus, pickupStatus, pickupDate, temperature, vent, humidity, email, deletedAt)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 `);
-                insertTrash.run(record.id, record.shippingLine, record.customer, record.bookingNo, record.size, record.containerNo, record.location, record.requestDate, record.ptiStatus, record.pickupStatus, record.pickupDate, record.temperature, record.vent, timestamp);
+                insertTrash.run(record.id, record.shippingLine, record.customer, record.bookingNo, record.size, record.containerNo, record.location, record.requestDate, record.ptiStatus, record.pickupStatus, record.pickupDate, record.temperature, record.vent, record.humidity, record.email, timestamp);
                 db.prepare('DELETE FROM pti_records WHERE id = ?').run(id);
             }
         }
     });
-    
+
     moveTransaction(ids);
     res.status(200).json({ success: true });
 });
@@ -145,10 +163,10 @@ app.post('/api/trash/restore', (req, res) => {
             const record = db.prepare('SELECT * FROM trash_records WHERE id = ?').get(id);
             if (record) {
                 const insertPti = db.prepare(`
-                    INSERT INTO pti_records (id, shippingLine, customer, bookingNo, size, containerNo, location, requestDate, ptiStatus, pickupStatus, pickupDate, temperature, vent)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO pti_records (id, shippingLine, customer, bookingNo, size, containerNo, location, requestDate, ptiStatus, pickupStatus, pickupDate, temperature, vent, humidity, email)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 `);
-                insertPti.run(record.id, record.shippingLine, record.customer, record.bookingNo, record.size, record.containerNo, record.location, record.requestDate, record.ptiStatus, record.pickupStatus, record.pickupDate, record.temperature, record.vent);
+                insertPti.run(record.id, record.shippingLine, record.customer, record.bookingNo, record.size, record.containerNo, record.location, record.requestDate, record.ptiStatus, record.pickupStatus, record.pickupDate, record.temperature, record.vent, record.humidity, record.email);
                 db.prepare('DELETE FROM trash_records WHERE id = ?').run(id);
             }
         }

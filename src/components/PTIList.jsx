@@ -11,6 +11,7 @@ export default function PTIList({ records, onEdit, onDelete, onBulkDelete, onRef
     const [selectedBookingNos, setSelectedBookingNos] = useState(new Set());
     const [showBulkPaste, setShowBulkPaste] = useState(false);
     const [initialPasteData, setInitialPasteData] = useState('');
+    const [editingPickupBookingNo, setEditingPickupBookingNo] = useState(null);
 
     // Global Paste Listener (Option 1: Smart Paste)
     useEffect(() => {
@@ -45,27 +46,56 @@ export default function PTIList({ records, onEdit, onDelete, onBulkDelete, onRef
     const uniqueLocs = ['All', ...new Set(records.map(r => r.location).filter(Boolean))];
     const months = ['All', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
 
-    // Filter Logic
-    const filteredRecords = records.filter(r => {
-        const matchesSearch = Object.values(r).some(val =>
-            String(val).toLowerCase().includes(searchTerm.toLowerCase())
-        );
-        const matchesPickup = showPickedUp ? true : r.pickupStatus !== 'Picked Up';
-        const matchesLine = lineFilter === 'All' || r.shippingLine === lineFilter;
-        const matchesLoc = locFilter === 'All' || r.location === locFilter;
+    // Filter & Sort Logic
+    const sortedAndFilteredRecords = useMemo(() => {
+        let result = records.filter(r => {
+            const matchesSearch = Object.values(r).some(val =>
+                String(val).toLowerCase().includes(searchTerm.toLowerCase())
+            );
+            const matchesPickup = showPickedUp ? true : r.pickupStatus !== 'Picked Up';
+            const matchesLine = lineFilter === 'All' || r.shippingLine === lineFilter;
+            const matchesLoc = locFilter === 'All' || r.location === locFilter;
 
-        // Month Filter (based on requestDate YYYY-MM-DD)
-        const recordMonth = r.requestDate ? r.requestDate.split('-')[1] : '';
-        const matchesMonth = monthFilter === 'All' || recordMonth === monthFilter;
+            // Month Filter (based on requestDate YYYY-MM-DD)
+            const recordMonth = r.requestDate ? r.requestDate.split('-')[1] : '';
+            const matchesMonth = monthFilter === 'All' || recordMonth === monthFilter;
 
-        // Pickup Date Filter
-        const matchesPickupDate = !pickupDateFilter || r.pickupDate === pickupDateFilter;
+            // Pickup Date Filter
+            const matchesPickupDate = !pickupDateFilter || r.pickupDate === pickupDateFilter;
 
-        return matchesSearch && matchesPickup && matchesLine && matchesLoc && matchesMonth && matchesPickupDate;
-    });
+            return matchesSearch && matchesPickup && matchesLine && matchesLoc && matchesMonth && matchesPickupDate;
+        });
+
+        if (sortConfig.key) {
+            result.sort((a, b) => {
+                const aVal = a[sortConfig.key] || '';
+                const bVal = b[sortConfig.key] || '';
+                if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+                if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }
+        return result;
+    }, [records, searchTerm, showPickedUp, lineFilter, locFilter, monthFilter, pickupDateFilter, sortConfig]);
+
+    const groupedGroups = useMemo(() => {
+        const groups = {};
+        const orderedKeys = [];
+
+        sortedAndFilteredRecords.forEach(record => {
+            const key = record.bookingNo ? record.bookingNo : `unique-${record.id}`;
+            if (!groups[key]) {
+                groups[key] = [];
+                orderedKeys.push(key);
+            }
+            groups[key].push(record);
+        });
+
+        return orderedKeys.map(key => groups[key]);
+    }, [sortedAndFilteredRecords]);
 
     const handleExport = () => {
-        const dataToExport = filteredRecords.map(r => ({
+        const dataToExport = sortedAndFilteredRecords.map(r => ({
             'LINE': r.shippingLine,
             'LOCATION': r.location,
             'CUSTOMER': r.customer,
@@ -198,6 +228,39 @@ export default function PTIList({ records, onEdit, onDelete, onBulkDelete, onRef
         await onRefresh();
     };
 
+    const handleGroupPickupToggle = async (group) => {
+        const firstRecord = group[0];
+        const currentStatus = firstRecord.pickupStatus;
+        const newStatus = currentStatus === 'Picked Up' ? 'Not Picked Up' : 'Picked Up';
+
+        // Only show confirmation when marking as DONE (Picked Up)
+        if (newStatus === 'Picked Up') {
+            const containerNos = group.map(r => r.containerNo || '-').join(', ');
+            const confirmMsg =
+                `PICK UP DONE 처리를 하시겠습니까?\n\n` +
+                `1. BOOKING NO: ${firstRecord.bookingNo}\n` +
+                `   CONTAINER NO: ${containerNos}\n` +
+                `   CUSTOMER: ${firstRecord.customer}\n` +
+                `   LOCATION: ${firstRecord.location}\n\n` +
+                `반출일: ${firstRecord.pickupDate || '-'}`;
+
+            if (!window.confirm(confirmMsg)) return;
+        }
+
+        for (const r of group) {
+            await updatePTIRecord({ ...r, pickupStatus: newStatus });
+        }
+        await onRefresh();
+    };
+
+    const handlePickupDateUpdate = async (group, newDate) => {
+        for (const r of group) {
+            await updatePTIRecord({ ...r, pickupDate: newDate });
+        }
+        setEditingPickupBookingNo(null);
+        await onRefresh();
+    };
+
     const handlePickupToggle = async (record) => {
         const newStatus = record.pickupStatus === 'Picked Up' ? 'Not Picked Up' : 'Picked Up';
         await updatePTIRecord({ ...record, pickupStatus: newStatus });
@@ -211,12 +274,6 @@ export default function PTIList({ records, onEdit, onDelete, onBulkDelete, onRef
         }));
     };
 
-    const groupedGroups = Object.values(filteredRecords.reduce((acc, record) => {
-        const key = record.bookingNo ? record.bookingNo : `unique-${record.id}`;
-        if (!acc[key]) acc[key] = [];
-        acc[key].push(record);
-        return acc;
-    }, {}));
 
     return (
         <div className="animate-fade-in">
@@ -361,12 +418,12 @@ export default function PTIList({ records, onEdit, onDelete, onBulkDelete, onRef
                             <th style={{ padding: '0.25rem' }}>Booking No</th>
                             <th style={{ padding: '0.25rem' }}>Container No</th>
                             <th style={{ padding: '0.25rem', width: '60px' }}>Size</th>
-                            <th style={{ padding: '0.25rem', width: '90px' }}>Temp/Vent</th>
-                            <th style={{ padding: '0.25rem', width: '45px', cursor: 'pointer', color: '#fbbf24', fontSize: '0.75rem' }} onClick={() => toggleSort('requestDate')}>
-                                REQ <ArrowUpDown size={10} />
+                            <th style={{ padding: '0.25rem', width: '100px', fontSize: '0.65rem' }}>℃/Vent/Hum</th>
+                            <th style={{ padding: '0.25rem', width: '45px', cursor: 'pointer', color: sortConfig.key === 'requestDate' ? '#fbbf24' : 'inherit', fontSize: '0.75rem' }} onClick={() => toggleSort('requestDate')}>
+                                REQ <ArrowUpDown size={10} style={{ opacity: sortConfig.key === 'requestDate' ? 1 : 0.3 }} />
                             </th>
-                            <th style={{ padding: '0.25rem', width: '45px', cursor: 'pointer', fontSize: '0.75rem' }} onClick={() => toggleSort('pickupDate')}>
-                                PICK <ArrowUpDown size={10} />
+                            <th style={{ padding: '0.25rem', width: '45px', cursor: 'pointer', color: sortConfig.key === 'pickupDate' ? '#fbbf24' : 'inherit', fontSize: '0.75rem' }} onClick={() => toggleSort('pickupDate')}>
+                                PICK <ArrowUpDown size={10} style={{ opacity: sortConfig.key === 'pickupDate' ? 1 : 0.3 }} />
                             </th>
                             <th style={{ padding: '0.25rem', fontSize: '0.75rem' }}>Remark</th>
                             <th style={{ padding: '0.25rem', width: '70px' }}>Picked?</th>
@@ -422,22 +479,48 @@ export default function PTIList({ records, onEdit, onDelete, onBulkDelete, onRef
                                             {isGroup ? group.map((r, i) => <div key={i}>{r.containerNo || '-'}</div>) : (record.containerNo || '-')}
                                         </td>
                                         <td style={{ padding: '0.2rem', fontSize: '0.85rem' }}>{record.size}' {isGroup && `x${group.length}`}</td>
-                                        <td style={{ padding: '0.2rem' }}>
-                                            <div style={{ fontSize: '0.75rem' }}>{record.temperature}</div>
-                                            <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)' }}>V: {record.vent}</div>
+                                        <td style={{ padding: '0.2rem', fontSize: '0.65rem' }}>
+                                            {record.temperature}
+                                            {record.vent && record.vent.toUpperCase() !== 'CLOSED' && ` (${record.vent}%)`}
+                                            {record.humidity && ` `}
+                                            {record.humidity && <span style={{ color: '#60a5fa' }}>({record.humidity}%)</span>}
                                         </td>
                                         <td style={{ padding: '0.2rem', fontSize: '0.75rem', color: '#fbbf24' }}>
                                             {record.requestDate ? record.requestDate.split('-').slice(1).join('/') : ''}
                                         </td>
-                                        <td style={{ padding: '0.2rem', fontSize: '0.75rem' }}>
-                                            {record.pickupDate ? record.pickupDate.split('-').slice(1).join('/') : ''}
+                                        <td
+                                            style={{ padding: '0.2rem', fontSize: '0.75rem', cursor: 'pointer' }}
+                                            onDoubleClick={() => setEditingPickupBookingNo(record.bookingNo)}
+                                            title="Double click to edit"
+                                        >
+                                            {editingPickupBookingNo === record.bookingNo ? (
+                                                <input
+                                                    type="date"
+                                                    defaultValue={record.pickupDate}
+                                                    autoFocus
+                                                    onBlur={(e) => handlePickupDateUpdate(group, e.target.value)}
+                                                    onChange={(e) => {
+                                                        if (e.target.value) handlePickupDateUpdate(group, e.target.value);
+                                                    }}
+                                                    style={{
+                                                        width: '100%',
+                                                        fontSize: '0.7rem',
+                                                        padding: '2px',
+                                                        background: 'var(--bg-color)',
+                                                        color: 'var(--text-color)',
+                                                        border: '1px solid var(--primary)'
+                                                    }}
+                                                />
+                                            ) : (
+                                                record.pickupDate ? record.pickupDate.split('-').slice(1).join('/') : '-'
+                                            )}
                                         </td>
                                         <td style={{ padding: '0.2rem', fontSize: '0.75rem', color: 'var(--text-secondary)', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={record.remarks}>
                                             {record.remarks ? record.remarks.split('\n')[0] : ''}
                                         </td>
                                         <td style={{ padding: '0.2rem' }}>
                                             <button
-                                                onClick={() => group.forEach(r => handlePickupToggle(r))}
+                                                onClick={() => handleGroupPickupToggle(group)}
                                                 style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem', color: record.pickupStatus === 'Picked Up' ? '#f472b6' : 'var(--text-secondary)', fontSize: '0.7rem' }}
                                             >
                                                 <Truck size={12} />
