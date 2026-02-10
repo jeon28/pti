@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Trash2, RotateCcw, Trash, Search, ArrowLeft } from 'lucide-react';
-import { getTrashRecords, restorePTIRecords, clearTrash } from '../lib/storage';
+import { getTrashRecords, recoverFromTrash } from '../lib/storage';
 
 export default function TrashView({ onRefresh }) {
     const [trashData, setTrashData] = useState([]);
@@ -20,7 +20,7 @@ export default function TrashView({ onRefresh }) {
 
     const handleRestore = async (record) => {
         if (confirm(`[${record.bookingNo}] 부킹 데이터를 복구하시겠습니까?`)) {
-            await restorePTIRecords([record.id]);
+            await recoverFromTrash(record);
             const nextTrash = await getTrashRecords();
             setTrashData(nextTrash);
             onRefresh();
@@ -36,10 +36,7 @@ export default function TrashView({ onRefresh }) {
     };
 
     const handleEmptyTrash = async () => {
-        if (confirm('휴지통을 모두 비우시겠습니까? 모든 데이터가 영구 삭제됩니다.')) {
-            await clearTrash();
-            setTrashData([]);
-        }
+        alert('이 기능은 현재 지원되지 않습니다.');
     };
 
     return (

@@ -1,9 +1,10 @@
-import { LayoutDashboard, Container, FileText, Settings, Truck, Mail, Clock, CheckCircle2 as CheckCircle, Trash2 } from 'lucide-react';
+import { LayoutDashboard, Container, FileText, Settings, Truck, Mail, Clock, CheckCircle, Trash2, Box } from 'lucide-react';
 
 export default function Sidebar({ currentView, setView }) {
     const menuItems = [
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'pti-list', label: 'PTI Management', icon: Container },
+        { id: 'special-list', label: 'Special Container', icon: Box },
         { id: 'reports', label: 'Reports', icon: FileText },
         { id: 'settings', label: 'Email Settings', icon: Mail },
         { id: 'trash', label: 'Trash Can', icon: Trash2 },
@@ -93,52 +94,6 @@ export default function Sidebar({ currentView, setView }) {
                     >
                         <Mail size={14} />
                         Copy Customer Link
-                    </button>
-                    <button
-                        onClick={() => {
-                            alert('SQLite 모드에서는 이 기능이 아직 지원되지 않습니다.');
-                        }}
-                        style={{
-                            width: '100%',
-                            padding: '0.6rem',
-                            borderRadius: '8px',
-                            background: 'rgba(59, 130, 246, 0.1)',
-                            border: '1px solid rgba(59, 130, 246, 0.2)',
-                            color: '#60a5fa',
-                            fontSize: '0.8rem',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '0.5rem'
-                        }}
-                    >
-                        <Clock size={14} />
-                        09:00 AM Reset
-                    </button>
-                    <button
-                        onClick={() => {
-                            alert('SQLite 모드에서는 이 기능이 아직 지원되지 않습니다.');
-                        }}
-                        style={{
-                            width: '100%',
-                            padding: '0.6rem',
-                            borderRadius: '8px',
-                            background: 'rgba(244, 114, 182, 0.1)',
-                            border: '1px solid rgba(244, 114, 182, 0.2)',
-                            color: '#f472b6',
-                            fontSize: '0.8rem',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '0.5rem'
-                        }}
-                    >
-                        <CheckCircle size={14} />
-                        21:10 PM EOD Mode
                     </button>
                 </div>
             </div>

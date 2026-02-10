@@ -5,8 +5,10 @@ import { getEmailSettings, saveEmailSettings } from '../lib/storage';
 export default function EmailSettings() {
     const [settings, setSettings] = useState({
         recipients: [],
-        template: { subject: '', body: '' }
+        template: { subject: '', body: '' },
+        specialTemplate: { subject: '', body: '' }
     });
+    const [templateType, setTemplateType] = useState('PTI'); // 'PTI' or 'SPECIAL'
     const [activeTab, setActiveTab] = useState('recipients');
 
     // New/Edit Recipient Form State
@@ -16,7 +18,13 @@ export default function EmailSettings() {
     useEffect(() => {
         const load = async () => {
             const data = await getEmailSettings();
-            setSettings(data);
+            if (data) {
+                setSettings({
+                    recipients: data.recipients || [],
+                    template: data.template || { subject: '', body: '' },
+                    specialTemplate: data.specialTemplate || { subject: '', body: '' }
+                });
+            }
         };
         load();
     }, []);
@@ -70,9 +78,10 @@ export default function EmailSettings() {
 
     const handleTemplateChange = (e) => {
         const { name, value } = e.target;
+        const targetField = templateType === 'PTI' ? 'template' : 'specialTemplate';
         setSettings(prev => ({
             ...prev,
-            template: { ...prev.template, [name]: value }
+            [targetField]: { ...prev[targetField], [name]: value }
         }));
     };
 
@@ -203,26 +212,45 @@ export default function EmailSettings() {
 
             {activeTab === 'template' && (
                 <div className="glass-panel" style={{ padding: '2rem' }}>
-                    <h3>Email Template Editor</h3>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                        <h3>Email Template Editor</h3>
+                        <div style={{ display: 'flex', gap: '0.5rem', background: 'rgba(255,255,255,0.05)', padding: '0.25rem', borderRadius: '8px' }}>
+                            <button
+                                className={`btn ${templateType === 'PTI' ? 'btn-primary' : 'btn-secondary'}`}
+                                onClick={() => setTemplateType('PTI')}
+                                style={{ padding: '0.4rem 1rem', fontSize: '0.8rem' }}
+                            >
+                                PTI Template
+                            </button>
+                            <button
+                                className={`btn ${templateType === 'SPECIAL' ? 'btn-primary' : 'btn-secondary'}`}
+                                onClick={() => setTemplateType('SPECIAL')}
+                                style={{ padding: '0.4rem 1rem', fontSize: '0.8rem' }}
+                            >
+                                Special Template
+                            </button>
+                        </div>
+                    </div>
+
                     <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem' }}>
                         Available placeholders: {'{bookingNo}'}, {'{containerNo}'}, {'{qty}'}, {'{location}'}, {'{shippingLine}'}, {'{customer}'}, {'{size}'}, {'{temperature}'}, {'{vent}'}, {'{pickupDate}'}
                     </p>
 
                     <div style={{ marginBottom: '1.5rem' }}>
-                        <label style={{ display: 'block', marginBottom: '0.5rem' }}>Subject Line</label>
+                        <label style={{ display: 'block', marginBottom: '0.5rem' }}>Subject Line ({templateType})</label>
                         <input
                             name="subject"
-                            value={settings.template.subject}
+                            value={templateType === 'PTI' ? settings.template.subject : settings.specialTemplate.subject}
                             onChange={handleTemplateChange}
                             style={{ width: '100%' }}
                         />
                     </div>
 
                     <div>
-                        <label style={{ display: 'block', marginBottom: '0.5rem' }}>Email Body</label>
+                        <label style={{ display: 'block', marginBottom: '0.5rem' }}>Email Body ({templateType})</label>
                         <textarea
                             name="body"
-                            value={settings.template.body}
+                            value={templateType === 'PTI' ? settings.template.body : settings.specialTemplate.body}
                             onChange={handleTemplateChange}
                             style={{ width: '100%', height: '300px', fontFamily: 'monospace', lineHeight: '1.5' }}
                         />

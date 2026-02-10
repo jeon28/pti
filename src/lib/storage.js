@@ -1,8 +1,9 @@
 const API_URL = 'http://localhost:3001/api';
 
-export const getPTIRecords = async () => {
+export const getPTIRecords = async (type) => {
     try {
-        const response = await fetch(`${API_URL}/pti`);
+        const url = type ? `${API_URL}/pti?type=${type}` : `${API_URL}/pti`;
+        const response = await fetch(url);
         return await response.json();
     } catch (error) {
         console.error('Error fetching PTI records', error);
@@ -23,12 +24,12 @@ export const addPTIRecord = async (record) => {
     }
 };
 
-export const updatePTIRecord = async (updatedRecord) => {
+export const updatePTIRecord = async (record) => {
     try {
-        const response = await fetch(`${API_URL}/pti/${updatedRecord.id}`, {
+        const response = await fetch(`${API_URL}/pti/${record.id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(updatedRecord)
+            body: JSON.stringify(record)
         });
         return await response.json();
     } catch (error) {
@@ -54,75 +55,58 @@ export const getTrashRecords = async () => {
     }
 };
 
-export const movePTIToTrash = async (recordsToMove) => {
+export const movePTIToTrash = async (records) => {
     try {
-        const ids = recordsToMove.map(r => r.id);
-        await fetch(`${API_URL}/trash/move`, {
+        const response = await fetch(`${API_URL}/trash`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ids })
+            body: JSON.stringify(records)
         });
+        return await response.json();
     } catch (error) {
         console.error('Error moving records to trash', error);
     }
 };
 
-export const restorePTIRecords = async (ids) => {
+export const recoverFromTrash = async (record) => {
     try {
-        await fetch(`${API_URL}/trash/restore`, {
+        const response = await fetch(`${API_URL}/trash/recover`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ids })
+            body: JSON.stringify(record)
         });
+        return await response.json();
     } catch (error) {
-        console.error('Error restoring records', error);
+        console.error('Error recovering record from trash', error);
     }
 };
 
-export const clearTrash = async () => {
+export const deleteFromTrash = async (id) => {
     try {
-        await fetch(`${API_URL}/trash/clear`, { method: 'DELETE' });
+        await fetch(`${API_URL}/trash/${id}`, { method: 'DELETE' });
     } catch (error) {
-        console.error('Error clearing trash', error);
+        console.error('Error deleting record from trash', error);
     }
 };
 
 export const getEmailSettings = async () => {
     try {
         const response = await fetch(`${API_URL}/settings/email`);
-        const data = await response.json();
-
-        const defaultSettings = {
-            recipients: [
-                { id: '1', matchType: 'Location', matchValue: 'SNCT', emailType: 'To', emailAddress: 'ops@snct.com' },
-                { id: '2', matchType: 'Location', matchValue: 'SNCT', emailType: 'CC', emailAddress: 'office@snct.com' },
-                { id: '3', matchType: 'Location', matchValue: 'HJIT', emailType: 'To', emailAddress: 'ops@hjit.co.kr' },
-                { id: '4', matchType: 'Location', matchValue: 'HJIT', emailType: 'CC', emailAddress: 'office@hjit.co.kr' },
-                { id: '5', matchType: 'Location', matchValue: 'ICT', emailType: 'To', emailAddress: 'ops@ict.co.kr' },
-                { id: '6', matchType: 'Location', matchValue: 'ICT', emailType: 'CC', emailAddress: 'office@ict.co.kr' },
-                { id: '7', matchType: 'Location', matchValue: 'E1', emailType: 'To', emailAddress: 'ops@e1ct.co.kr' },
-                { id: '8', matchType: 'Location', matchValue: 'E1', emailType: 'CC', emailAddress: 'office@e1ct.co.kr' },
-            ],
-            template: {
-                subject: '[PTI Request] {location} - {shippingLine} - {bookingNo}',
-                body: `Dear Team,\n\nPlease process the following PTI request:\n\nCustomer: {customer}\nBooking No: {bookingNo}\nQty: {qty} units\nContainer No: {containerNo}\nSize: {size}\nTemp: {temperature}\nVent: {vent}\nPickup Date: {pickupDate}\n\nThank you.\n`
-            }
-        };
-
-        return data ? { ...defaultSettings, ...data } : defaultSettings;
+        return await response.json();
     } catch (error) {
         console.error('Error fetching email settings', error);
-        return { recipients: [], template: { subject: '', body: '' } };
+        return null;
     }
 };
 
 export const saveEmailSettings = async (settings) => {
     try {
-        await fetch(`${API_URL}/settings/email`, {
+        const response = await fetch(`${API_URL}/settings/email`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(settings)
         });
+        return await response.json();
     } catch (error) {
         console.error('Error saving email settings', error);
     }
