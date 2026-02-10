@@ -158,6 +158,24 @@ export default function PTIForm({ record, data, onClose, onSave, standalone = fa
         const bookingMatch = text.match(/(HASLK\d{11}|SNKO\d{12})/i);
         if (bookingMatch) {
             newData.bookingNo = bookingMatch[0].toUpperCase();
+            // Prefix Logic Sync
+            if (newData.bookingNo.startsWith('HASL')) newData.shippingLine = 'HAL';
+            if (newData.bookingNo.startsWith('SNKO')) newData.shippingLine = 'SKR';
+        }
+
+        // 1-b. Container Numbers extraction (4 alpha + 7 digits)
+        const containerRegex = /\b([A-Z]{4}\d{7})\b/ig;
+        const foundContainers = text.match(containerRegex);
+        if (foundContainers && foundContainers.length > 0) {
+            // If user hasn't typed anything yet, let's fill them in order
+            const nextList = [...containerList];
+            foundContainers.forEach((no, idx) => {
+                if (nextList[idx]) nextList[idx].no = no.toUpperCase();
+                else if (idx < 20) nextList.push({ no: no.toUpperCase(), size: '40RE' }); // Add if not enough slots
+            });
+            setContainerList(nextList);
+            setQty40(nextList.filter(c => c.size === '40RE').length);
+            setQty20(nextList.filter(c => c.size === '20RE').length);
         }
 
         // 2. Size QTY: 40RF X 1, 20RF 1대, 4** X 수량, 2*** X 수량
@@ -258,6 +276,17 @@ export default function PTIForm({ record, data, onClose, onSave, standalone = fa
         if (!formData.bookingNo || formData.bookingNo.trim() === '' ||
             formData.bookingNo === 'SNKO' || formData.bookingNo === 'HASLK') {
             alert('Please enter a valid Booking Number.');
+            return;
+        }
+
+        // Validate Container Numbers (4 Alpha + 7 Digits)
+        const containerPattern = /^[A-Z]{4}\d{7}$/i;
+        const invalidContainers = containerList
+            .filter(c => c.no && c.no.trim() !== '')
+            .filter(c => !containerPattern.test(c.no.trim()));
+
+        if (invalidContainers.length > 0) {
+            alert(`오류: 컨테이너 번호 형식이 올바르지 않습니다 ([${invalidContainers.map(c => c.no).join(', ')}]).\n영문 4자리 + 숫자 7개 형식으로 입력해 주세요.`);
             return;
         }
         if (!formData.location) {

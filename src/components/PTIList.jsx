@@ -12,6 +12,9 @@ export default function PTIList({ records, onEdit, onDelete, onBulkDelete, onRef
     const [showBulkPaste, setShowBulkPaste] = useState(false);
     const [initialPasteData, setInitialPasteData] = useState('');
     const [editingPickupBookingNo, setEditingPickupBookingNo] = useState(null);
+    const [editingLocationBookingNo, setEditingLocationBookingNo] = useState(null);
+    const [editingCustomerBookingNo, setEditingCustomerBookingNo] = useState(null);
+    const [editingRemarksBookingNo, setEditingRemarksBookingNo] = useState(null);
 
     // Global Paste Listener (Option 1: Smart Paste)
     useEffect(() => {
@@ -195,6 +198,24 @@ export default function PTIList({ records, onEdit, onDelete, onBulkDelete, onRef
         }
         await onRefresh();
         alert(`${selectedBookingNos.size}개 부킹의 픽업 상태가 '${newStatus}'(으)로 일괄 변경되었습니다.`);
+    };
+
+    const handleLocationUpdate = async (record, newLocation) => {
+        await updatePTIRecord({ ...record, location: newLocation });
+        setEditingLocationBookingNo(null);
+        await onRefresh();
+    };
+
+    const handleRemarksUpdate = async (record, newRemarks) => {
+        await updatePTIRecord({ ...record, remarks: newRemarks });
+        setEditingRemarksBookingNo(null);
+        await onRefresh();
+    };
+
+    const handleCustomerUpdate = async (record, newCustomer) => {
+        await updatePTIRecord({ ...record, customer: newCustomer });
+        setEditingCustomerBookingNo(null);
+        await onRefresh();
     };
 
     const toggleSelection = (bookingNo) => {
@@ -402,37 +423,37 @@ export default function PTIList({ records, onEdit, onDelete, onBulkDelete, onRef
                 <table>
                     <thead>
                         <tr>
-                            <th style={{ padding: '0.25rem', width: '30px', textAlign: 'center' }}>
+                            <th style={{ width: '40px' }}>
                                 <input
                                     type="checkbox"
                                     checked={groupedGroups.length > 0 && selectedBookingNos.size === groupedGroups.length}
                                     onChange={() => toggleAllSelection(selectedBookingNos.size === groupedGroups.length, groupedGroups.map(g => g[0].bookingNo))}
                                 />
                             </th>
-                            <th style={{ padding: '0.25rem', width: '35px', textAlign: 'center' }}>No.</th>
-                            <th style={{ padding: '0.25rem', width: '45px', textAlign: 'center' }}>Edit</th>
-                            <th style={{ padding: '0.25rem', width: '100px' }}>Status</th>
-                            <th style={{ padding: '0.25rem', width: '80px' }}>Line</th>
-                            <th style={{ padding: '0.25rem', width: '80px' }}>Location</th>
-                            <th style={{ padding: '0.25rem' }}>Customer</th>
-                            <th style={{ padding: '0.25rem' }}>Booking No</th>
-                            <th style={{ padding: '0.25rem' }}>Container No</th>
-                            <th style={{ padding: '0.25rem', width: '60px' }}>Size</th>
-                            <th style={{ padding: '0.25rem', width: '100px', fontSize: '0.65rem' }}>℃/Vent/Hum</th>
-                            <th style={{ padding: '0.25rem', width: '45px', cursor: 'pointer', color: sortConfig.key === 'requestDate' ? '#fbbf24' : 'inherit', fontSize: '0.75rem' }} onClick={() => toggleSort('requestDate')}>
+                            <th style={{ width: '35px', textAlign: 'center' }}>No.</th>
+                            <th style={{ width: '45px', textAlign: 'center' }}>Edit</th>
+                            <th style={{ width: '100px' }}>Status</th>
+                            <th style={{ width: '80px' }}>Line</th>
+                            <th style={{ width: '80px' }}>Location</th>
+                            <th>Customer</th>
+                            <th>Booking No</th>
+                            <th>Container No</th>
+                            <th style={{ width: '60px' }}>Size</th>
+                            <th style={{ width: '100px', fontSize: '0.65rem' }}>℃/Vent/Hum</th>
+                            <th style={{ width: '45px', cursor: 'pointer', color: sortConfig.key === 'requestDate' ? '#fbbf24' : 'inherit', fontSize: '0.75rem' }} onClick={() => toggleSort('requestDate')}>
                                 REQ <ArrowUpDown size={10} style={{ opacity: sortConfig.key === 'requestDate' ? 1 : 0.3 }} />
                             </th>
-                            <th style={{ padding: '0.25rem', width: '45px', cursor: 'pointer', color: sortConfig.key === 'pickupDate' ? '#fbbf24' : 'inherit', fontSize: '0.75rem' }} onClick={() => toggleSort('pickupDate')}>
+                            <th style={{ width: '45px', cursor: 'pointer', color: sortConfig.key === 'pickupDate' ? '#fbbf24' : 'inherit', fontSize: '0.75rem' }} onClick={() => toggleSort('pickupDate')}>
                                 PICK <ArrowUpDown size={10} style={{ opacity: sortConfig.key === 'pickupDate' ? 1 : 0.3 }} />
                             </th>
-                            <th style={{ padding: '0.25rem', fontSize: '0.75rem' }}>Remark</th>
-                            <th style={{ padding: '0.25rem', width: '70px' }}>Picked?</th>
+                            <th>Remark</th>
+                            <th style={{ width: '75px' }}>Picked?</th>
                         </tr>
                     </thead>
                     <tbody>
                         {groupedGroups.length === 0 ? (
                             <tr>
-                                <td colSpan="12" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
+                                <td colSpan="15" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
                                     No records found for current filters.
                                 </td>
                             </tr>
@@ -472,24 +493,85 @@ export default function PTIList({ records, onEdit, onDelete, onBulkDelete, onRef
                                             </select>
                                         </td>
                                         <td style={{ padding: '0.2rem', fontSize: '0.85rem' }}>{record.shippingLine}</td>
-                                        <td style={{ padding: '0.2rem', fontSize: '0.85rem' }}>{record.location}</td>
-                                        <td style={{ padding: '0.2rem', maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '0.85rem' }} title={record.customer}>{record.customer}</td>
+                                        <td
+                                            style={{ padding: '0.2rem', fontSize: '0.85rem', cursor: 'pointer' }}
+                                            onDoubleClick={() => setEditingLocationBookingNo(record.bookingNo)}
+                                            title="Double click to edit"
+                                        >
+                                            {editingLocationBookingNo === record.bookingNo ? (
+                                                <select
+                                                    defaultValue={record.location}
+                                                    autoFocus
+                                                    onBlur={(e) => handleLocationUpdate(record, e.target.value)}
+                                                    onChange={(e) => handleLocationUpdate(record, e.target.value)}
+                                                    style={{
+                                                        width: '100%',
+                                                        padding: '0.3rem',
+                                                        fontSize: '0.85rem',
+                                                        border: '2px solid var(--primary)',
+                                                        borderRadius: '4px',
+                                                        background: '#fff',
+                                                        color: '#000'
+                                                    }}
+                                                >
+                                                    <option value="">Select</option>
+                                                    <option value="SNCT">SNCT</option>
+                                                    <option value="HJIT">HJIT</option>
+                                                    <option value="ICT">ICT</option>
+                                                    <option value="E1">E1</option>
+                                                </select>
+                                            ) : (
+                                                record.location || '-'
+                                            )}
+                                        </td>
+                                        <td
+                                            style={{ padding: '0.2rem', maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '0.85rem', cursor: 'pointer' }}
+                                            title={editingCustomerBookingNo === record.bookingNo ? "Press Enter to save" : "Double click to edit"}
+                                            onDoubleClick={() => setEditingCustomerBookingNo(record.bookingNo)}
+                                        >
+                                            {editingCustomerBookingNo === record.bookingNo ? (
+                                                <input
+                                                    type="text"
+                                                    defaultValue={record.customer}
+                                                    autoFocus
+                                                    onBlur={(e) => handleCustomerUpdate(record, e.target.value)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            handleCustomerUpdate(record, e.target.value);
+                                                        } else if (e.key === 'Escape') {
+                                                            setEditingCustomerBookingNo(null);
+                                                        }
+                                                    }}
+                                                    style={{
+                                                        width: '100%',
+                                                        padding: '0.3rem',
+                                                        fontSize: '0.85rem',
+                                                        border: '2px solid var(--primary)',
+                                                        borderRadius: '4px',
+                                                        background: '#fff',
+                                                        color: '#000'
+                                                    }}
+                                                />
+                                            ) : (
+                                                record.customer || '-'
+                                            )}
+                                        </td>
                                         <td style={{ padding: '0.2rem', fontSize: '0.85rem' }}>{record.bookingNo}</td>
                                         <td style={{ padding: '0.2rem', fontWeight: 600, fontSize: '0.85rem' }}>
                                             {isGroup ? group.map((r, i) => <div key={i}>{r.containerNo || '-'}</div>) : (record.containerNo || '-')}
                                         </td>
-                                        <td style={{ padding: '0.2rem', fontSize: '0.85rem' }}>{record.size}' {isGroup && `x${group.length}`}</td>
-                                        <td style={{ padding: '0.2rem', fontSize: '0.65rem' }}>
+                                        <td style={{ padding: '0.2rem', fontSize: '0.95rem', fontWeight: 600 }}>{record.size}' {isGroup && `x${group.length}`}</td>
+                                        <td style={{ padding: '0.2rem', fontSize: '0.85rem' }}>
                                             {record.temperature}
                                             {record.vent && record.vent.toUpperCase() !== 'CLOSED' && ` (${record.vent}%)`}
                                             {record.humidity && ` `}
                                             {record.humidity && <span style={{ color: '#60a5fa' }}>({record.humidity}%)</span>}
                                         </td>
-                                        <td style={{ padding: '0.2rem', fontSize: '0.75rem', color: '#fbbf24' }}>
+                                        <td style={{ padding: '0.2rem', fontSize: '0.9rem', color: '#fbbf24', fontWeight: 600 }}>
                                             {record.requestDate ? record.requestDate.split('-').slice(1).join('/') : ''}
                                         </td>
                                         <td
-                                            style={{ padding: '0.2rem', fontSize: '0.75rem', cursor: 'pointer' }}
+                                            style={{ padding: '0.2rem', fontSize: '0.9rem', cursor: 'pointer', fontWeight: 600 }}
                                             onDoubleClick={() => setEditingPickupBookingNo(record.bookingNo)}
                                             title="Double click to edit"
                                         >
@@ -504,7 +586,7 @@ export default function PTIList({ records, onEdit, onDelete, onBulkDelete, onRef
                                                     }}
                                                     style={{
                                                         width: '100%',
-                                                        fontSize: '0.7rem',
+                                                        fontSize: '0.85rem',
                                                         padding: '2px',
                                                         background: 'var(--bg-color)',
                                                         color: 'var(--text-color)',
@@ -515,13 +597,13 @@ export default function PTIList({ records, onEdit, onDelete, onBulkDelete, onRef
                                                 record.pickupDate ? record.pickupDate.split('-').slice(1).join('/') : '-'
                                             )}
                                         </td>
-                                        <td style={{ padding: '0.2rem', fontSize: '0.75rem', color: 'var(--text-secondary)', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={record.remarks}>
-                                            {record.remarks ? record.remarks.split('\n')[0] : ''}
+                                        <td style={{ padding: '0.2rem', fontSize: '0.9rem', color: 'var(--text-secondary)', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={record.remarks}>
+                                            {record.remarks ? record.remarks.split('\n')[0].substring(0, 10) : ''}
                                         </td>
                                         <td style={{ padding: '0.2rem' }}>
                                             <button
                                                 onClick={() => handleGroupPickupToggle(group)}
-                                                style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem', color: record.pickupStatus === 'Picked Up' ? '#f472b6' : 'var(--text-secondary)', fontSize: '0.7rem' }}
+                                                style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem', color: record.pickupStatus === 'Picked Up' ? '#f472b6' : 'var(--text-secondary)', fontSize: '0.85rem', fontWeight: 600 }}
                                             >
                                                 <Truck size={12} />
                                                 {record.pickupStatus === 'Picked Up' ? 'Done' : 'No'}

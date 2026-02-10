@@ -183,28 +183,83 @@ export default function SpecialContainerForm({ record, data, onClose, onSave }) 
         if (!text) return;
         const newData = { ...formData };
 
+        // Extract booking number (HASLK or SNKO patterns)
         const bookingMatch = text.match(/(HASLK\d{11}|SNKO\d{12})/i);
-        if (bookingMatch) newData.bookingNo = bookingMatch[0].toUpperCase();
+        if (bookingMatch) {
+            newData.bookingNo = bookingMatch[0].toUpperCase();
+            if (newData.bookingNo.startsWith('HASL')) newData.shippingLine = 'HAL';
+            if (newData.bookingNo.startsWith('SNKO')) newData.shippingLine = 'SKR';
+        }
 
-        const sizeMatches = [
-            { series: '2', type: '22PC', regex: /(?:20(?:FLAT|FR|PC)?|22PC)\s*(?:[xX*:]|[대|UNIT|개])?\s*(\d{1,2})\b/i },
-            { series: '2', type: '22UT', regex: /(?:20(?:UT|OT)?|22UT)\s*(?:[xX*:]|[대|UNIT|개])?\s*(\d{1,2})\b/i },
-            { series: '4', type: '42PC', regex: /(?:40(?:FLAT|FR|PC)?|42PC)\s*(?:[xX*:]|[대|UNIT|개])?\s*(\d{1,2})\b/i },
-            { series: '4', type: '45PC', regex: /(?:45(?:FLAT|FR|PC)?|45PC|45UT)\s*(?:[xX*:]|[대|UNIT|개])?\s*(\d{1,2})\b/i },
-            { series: '4', type: '42UT', regex: /(?:40(?:UT|OT)?|42UT)\s*(?:[xX*:]|[대|UNIT|개])?\s*(\d{1,2})\b/i }
-        ];
+        // Extract container numbers (standard format: 4 letters + 7 digits)
+        const containerRegex = /\b([A-Z]{4}\d{7})\b/ig;
+        const foundContainers = text.match(containerRegex);
+        if (foundContainers && foundContainers.length > 0) {
+            const nextList = [...containerList];
+            foundContainers.forEach((no, idx) => {
+                if (nextList[idx]) nextList[idx].no = no.toUpperCase();
+            });
+            setContainerList(nextList);
+        }
 
-        sizeMatches.forEach(m => {
-            const match = text.match(m.regex);
-            if (match) {
-                if (m.series === '2') setSeries2({ type: m.type, qty: parseInt(match[1], 10) });
-                else setSeries4({ type: m.type, qty: parseInt(match[1], 10) });
-            }
-        });
+        // Extract size and quantity patterns
+        // Patterns: "42PC X 1", "22PC X 2", "40FLAT X 3", etc.
+        const sizeQtyPattern = /(?:사이즈\s*[:：]\s*)?(\d{2}(?:PC|UT|FLAT|FR|OT))\s*[xX*×]\s*(\d{1,2})/gi;
+        let sizeMatches = [...text.matchAll(sizeQtyPattern)];
 
-        const dateMatch = text.match(/\b(\d{2,4})[./-](\d{1,2})[./-](\d{1,2})\b/);
+        // If no "X qty" pattern found, try individual size mentions
+        if (sizeMatches.length === 0) {
+            const individualSizePatterns = [
+                { series: '2', type: '22PC', regex: /(?:20(?:FLAT|FR|PC)?|22PC)/i },
+                { series: '2', type: '22UT', regex: /(?:20(?:UT|OT)?|22UT)/i },
+                { series: '4', type: '42PC', regex: /(?:40(?:FLAT|FR|PC)?|42PC)/i },
+                { series: '4', type: '45PC', regex: /(?:45(?:FLAT|FR|PC)?|45PC|45UT)/i },
+                { series: '4', type: '42UT', regex: /(?:40(?:UT|OT)?|42UT)/i }
+            ];
+
+            individualSizePatterns.forEach(m => {
+                const match = text.match(m.regex);
+                if (match) {
+                    if (m.series === '2') setSeries2({ type: m.type, qty: 1 });
+                    else setSeries4({ type: m.type, qty: 1 });
+                }
+            });
+        } else {
+            // Process "X qty" patterns
+            sizeMatches.forEach(match => {
+                const sizeStr = match[1].toUpperCase();
+                const qty = parseInt(match[2], 10);
+
+                // Normalize size format
+                let normalizedSize = sizeStr;
+                if (sizeStr.match(/^(20|22).*(PC|FLAT|FR)/i)) normalizedSize = '22PC';
+                else if (sizeStr.match(/^(20|22).*(UT|OT)/i)) normalizedSize = '22UT';
+                else if (sizeStr.match(/^40.*(PC|FLAT|FR)/i)) normalizedSize = '42PC';
+                else if (sizeStr.match(/^45.*(PC|FLAT|FR)/i)) normalizedSize = '45PC';
+                else if (sizeStr.match(/^(40|42).*(UT|OT)/i)) normalizedSize = '42UT';
+
+                // Set series based on size
+                if (normalizedSize.startsWith('22')) {
+                    setSeries2({ type: normalizedSize, qty: qty });
+                } else {
+                    setSeries4({ type: normalizedSize, qty: qty });
+                }
+            });
+        }
+
+        // Extract date in M/D or MM/DD format (pickup date)
+        // Patterns: "2/11", "02/11", "12/25", etc.
+        const dateMatch = text.match(/(?:픽업\s*날짜\s*[:：]\s*)?(\d{1,2})[\/\-.](\d{1,2})(?!\d)/);
         if (dateMatch) {
-            let [_, y, m, d] = dateMatch;
+            let [_, m, d] = dateMatch;
+            const currentYear = new Date().getFullYear();
+            newData.pickupDate = `${currentYear}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+        }
+
+        // Also try full date format (YYYY-MM-DD or similar)
+        const fullDateMatch = text.match(/\b(\d{2,4})[./-](\d{1,2})[./-](\d{1,2})\b/);
+        if (fullDateMatch && !dateMatch) {
+            let [_, y, m, d] = fullDateMatch;
             if (y.length === 2) y = "20" + y;
             newData.pickupDate = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
         }
@@ -242,6 +297,16 @@ export default function SpecialContainerForm({ record, data, onClose, onSave }) 
         e.preventDefault();
         if (!formData.bookingNo || formData.bookingNo.trim() === '') { alert('Please enter a valid Booking Number.'); return; }
         if (!formData.location) { alert('Please select a Location.'); return; }
+
+        const containerPattern = /^[A-Z]{4}\d{7}$/i;
+        const invalidContainers = containerList
+            .filter(c => c.no && c.no.trim() !== '')
+            .filter(c => !containerPattern.test(c.no.trim()));
+
+        if (invalidContainers.length > 0) {
+            alert(`오류: 컨테이너 번호 형식이 올바르지 않습니다 ([${invalidContainers.map(c => c.no).join(', ')}]).\n영문 4자리 + 숫자 7개 형식으로 입력해 주세요.`);
+            return;
+        }
 
         const recordsToSave = containerList.map(cntr => ({
             ...formData,
@@ -387,6 +452,8 @@ export default function SpecialContainerForm({ record, data, onClose, onSave }) 
                             <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Pickup Date</label>
                             <input type="date" name="pickupDate" value={formData.pickupDate} onChange={handleChange} />
                         </div>
+
+
 
                         <div style={{ gridColumn: 'span 2' }}>
                             <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Remarks</label>
