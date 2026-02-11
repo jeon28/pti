@@ -1,16 +1,30 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Plus, Search, Trash2, Edit2, Truck, FileDown, Clipboard, ArrowUpDown } from 'lucide-react';
+import { Plus, Search, Trash2, Edit2, Truck, FileDown, Clipboard, ArrowUpDown, Filter } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { addPTIRecord, updatePTIRecord } from '../lib/storage';
 import BulkPasteModal from './BulkPasteModal';
 
 export default function SpecialContainerList({ records, onEdit, onDelete, onBulkDelete, onRefresh, onAddNew }) {
     const [searchTerm, setSearchTerm] = useState('');
-    const [selectedIds, setSelectedIds] = useState(new Set());
+    const [selectedBookingNos, setSelectedBookingNos] = useState(new Set());
     const [showBulkPaste, setShowBulkPaste] = useState(false);
     const [initialPasteData, setInitialPasteData] = useState('');
     const [sortConfig, setSortConfig] = useState({ key: 'requestDate', direction: 'desc' });
+    const [editingPickupBookingNo, setEditingPickupBookingNo] = useState(null);
     const [editingLocationBookingNo, setEditingLocationBookingNo] = useState(null);
+    const [editingCustomerBookingNo, setEditingCustomerBookingNo] = useState(null);
+    const [editingRemarksBookingNo, setEditingRemarksBookingNo] = useState(null);
+
+    // Filters & Sorting
+    const [lineFilter, setLineFilter] = useState('All');
+    const [locFilter, setLocFilter] = useState('All');
+    const [monthFilter, setMonthFilter] = useState('All');
+    const [showPickedUp, setShowPickedUp] = useState(false);
+
+    // Derived options
+    const uniqueLines = ['All', ...new Set(records.map(r => r.shippingLine).filter(Boolean))];
+    const uniqueLocs = ['All', ...new Set(records.map(r => r.location).filter(Boolean))];
+    const months = ['All', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
 
     // Global Paste Listener
     useEffect(() => {
@@ -33,11 +47,19 @@ export default function SpecialContainerList({ records, onEdit, onDelete, onBulk
     }, []);
 
     const filteredRecords = useMemo(() => {
-        let result = records.filter(r =>
-            Object.values(r).some(val =>
+        let result = records.filter(r => {
+            const matchesSearch = Object.values(r).some(val =>
                 String(val).toLowerCase().includes(searchTerm.toLowerCase())
-            )
-        );
+            );
+            const matchesPickup = showPickedUp ? true : r.pickupStatus !== 'Picked Up';
+            const matchesLine = lineFilter === 'All' || r.shippingLine === lineFilter;
+            const matchesLoc = locFilter === 'All' || r.location === locFilter;
+
+            const recordMonth = r.requestDate ? r.requestDate.split('-')[1] : '';
+            const matchesMonth = monthFilter === 'All' || recordMonth === monthFilter;
+
+            return matchesSearch && matchesPickup && matchesLine && matchesLoc && matchesMonth;
+        });
 
         if (sortConfig.key) {
             result.sort((a, b) => {
@@ -49,25 +71,23 @@ export default function SpecialContainerList({ records, onEdit, onDelete, onBulk
             });
         }
         return result;
-    }, [records, searchTerm, sortConfig]);
+    }, [records, searchTerm, lineFilter, locFilter, monthFilter, showPickedUp, sortConfig]);
 
     // Group records by booking number for merged display
-    const groupedRecords = useMemo(() => {
+    const groupedGroups = useMemo(() => {
         const groups = {};
+        const orderedKeys = [];
+
         filteredRecords.forEach(record => {
-            const key = record.bookingNo;
+            const key = record.bookingNo ? record.bookingNo : `unique-${record.id}`;
             if (!groups[key]) {
-                groups[key] = {
-                    ...record,
-                    containers: [{ id: record.id, containerNo: record.containerNo, size: record.size }],
-                    allIds: [record.id]
-                };
-            } else {
-                groups[key].containers.push({ id: record.id, containerNo: record.containerNo, size: record.size });
-                groups[key].allIds.push(record.id);
+                groups[key] = [];
+                orderedKeys.push(key);
             }
+            groups[key].push(record);
         });
-        return Object.values(groups);
+
+        return orderedKeys.map(key => groups[key]);
     }, [filteredRecords]);
 
     const handleExport = () => {
@@ -90,18 +110,33 @@ export default function SpecialContainerList({ records, onEdit, onDelete, onBulk
         XLSX.writeFile(wb, `Special_Container_Report.xlsx`);
     };
 
-    const toggleSelection = (id) => {
-        const newSelection = new Set(selectedIds);
-        if (newSelection.has(id)) newSelection.delete(id);
-        else newSelection.add(id);
-        setSelectedIds(newSelection);
+    const handleBulkDelete = () => {
+        if (selectedBookingNos.size === 0) return;
+        if (confirm(`선택한 ${selectedBookingNos.size}개의 부킹(전체 컨테이너)을 삭제하시겠습니까?`)) {
+            const recordsToDelete = records.filter(r => selectedBookingNos.has(r.bookingNo));
+            onBulkDelete(recordsToDelete);
+            setSelectedBookingNos(new Set());
+        }
     };
 
-    const handleBulkDelete = () => {
-        if (selectedIds.size === 0) return;
-        const recordsToDelete = records.filter(r => selectedIds.has(r.id));
-        onBulkDelete(recordsToDelete);
-        setSelectedIds(new Set());
+    const handleBulkStatusChange = async (newStatus) => {
+        if (selectedBookingNos.size === 0) return;
+        const recordsToUpdate = records.filter(r => selectedBookingNos.has(r.bookingNo));
+        for (const r of recordsToUpdate) {
+            await updatePTIRecord({ ...r, ptiStatus: newStatus });
+        }
+        await onRefresh();
+        alert(`${selectedBookingNos.size}개 부킹의 상태가 '${newStatus}'(으)로 일괄 변경되었습니다.`);
+    };
+
+    const handleBulkPickupChange = async (newStatus) => {
+        if (selectedBookingNos.size === 0) return;
+        const recordsToUpdate = records.filter(r => selectedBookingNos.has(r.bookingNo));
+        for (const r of recordsToUpdate) {
+            await updatePTIRecord({ ...r, pickupStatus: newStatus });
+        }
+        await onRefresh();
+        alert(`${selectedBookingNos.size}개 부킹의 픽업 상태가 '${newStatus}'(으)로 일괄 변경되었습니다.`);
     };
 
     const handleBulkSave = async (batchRecords) => {
@@ -117,15 +152,72 @@ export default function SpecialContainerList({ records, onEdit, onDelete, onBulk
         await onRefresh();
     };
 
-    const handleLocationUpdate = async (group, newLocation) => {
-        for (const id of group.allIds) {
-            const record = records.find(r => r.id === id);
-            if (record) {
-                await updatePTIRecord({ ...record, location: newLocation });
-            }
-        }
+    const handleLocationUpdate = async (record, newLocation) => {
+        await updatePTIRecord({ ...record, location: newLocation });
         setEditingLocationBookingNo(null);
         await onRefresh();
+    };
+
+    const handleCustomerUpdate = async (record, newCustomer) => {
+        await updatePTIRecord({ ...record, customer: newCustomer });
+        setEditingCustomerBookingNo(null);
+        await onRefresh();
+    };
+
+    const handleRemarksUpdate = async (record, newRemarks) => {
+        await updatePTIRecord({ ...record, remarks: newRemarks });
+        setEditingRemarksBookingNo(null);
+        await onRefresh();
+    };
+
+    const handlePickupDateUpdate = async (group, newDate) => {
+        for (const r of group) {
+            await updatePTIRecord({ ...r, pickupDate: newDate });
+        }
+        setEditingPickupBookingNo(null);
+        await onRefresh();
+    };
+
+    const handleGroupPickupToggle = async (group) => {
+        const firstRecord = group[0];
+        const currentStatus = firstRecord.pickupStatus;
+        const newStatus = currentStatus === 'Picked Up' ? 'Not Picked Up' : 'Picked Up';
+
+        if (newStatus === 'Picked Up') {
+            const containerNos = group.map(r => r.containerNo || '-').join(', ');
+            const confirmMsg =
+                `PICK UP DONE 처리를 하시겠습니까?\n\n` +
+                `1. BOOKING NO: ${firstRecord.bookingNo}\n` +
+                `   CONTAINER NO: ${containerNos}\n` +
+                `   CUSTOMER: ${firstRecord.customer}\n` +
+                `   LOCATION: ${firstRecord.location}\n\n` +
+                `반출일: ${firstRecord.pickupDate || '-'}`;
+
+            if (!window.confirm(confirmMsg)) return;
+        }
+
+        for (const r of group) {
+            await updatePTIRecord({ ...r, pickupStatus: newStatus });
+        }
+        await onRefresh();
+    };
+
+    const toggleSelection = (bookingNo) => {
+        const newSelection = new Set(selectedBookingNos);
+        if (newSelection.has(bookingNo)) {
+            newSelection.delete(bookingNo);
+        } else {
+            newSelection.add(bookingNo);
+        }
+        setSelectedBookingNos(newSelection);
+    };
+
+    const toggleAllSelection = (isAllSelected, visibleBookingNos) => {
+        if (isAllSelected) {
+            setSelectedBookingNos(new Set());
+        } else {
+            setSelectedBookingNos(new Set(visibleBookingNos));
+        }
     };
 
     const toggleSort = (key) => {
@@ -135,49 +227,115 @@ export default function SpecialContainerList({ records, onEdit, onDelete, onBulk
         }));
     };
 
-    const getStatusColor = (status) => {
-        switch (status) {
-            case 'Pass': return '#10b981';
-            case 'In Progress': return '#f59e0b';
-            case 'Cancelled': return '#ef4444';
-            default: return '#6b7280';
-        }
-    };
-
     return (
-        <div className="animate-fade-in" style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        <div className="animate-fade-in">
             <div className="header">
                 <div>
                     <h2 className="page-title">Special Container Management</h2>
-                    <p style={{ color: 'var(--text-secondary)', marginTop: '0.5rem' }}>Manage non-reefer special containers</p>
+                    <p style={{ color: 'var(--text-secondary)', marginTop: '0.5rem' }}>Active Special Container Records & Filters</p>
                 </div>
                 <div style={{ display: 'flex', gap: '1rem' }}>
-                    {selectedIds.size > 0 && (
-                        <button className="btn btn-secondary" onClick={handleBulkDelete} style={{ borderColor: '#ef4444', color: '#ef4444' }}>
-                            <Trash2 size={18} /> Delete Selected ({selectedIds.size})
-                        </button>
+                    <button
+                        className="btn btn-secondary"
+                        onClick={() => setSelectedBookingNos(new Set())}
+                        style={{ opacity: selectedBookingNos.size > 0 ? 1 : 0.5, cursor: selectedBookingNos.size > 0 ? 'pointer' : 'default' }}
+                        disabled={selectedBookingNos.size === 0}
+                    >
+                        선택 해제
+                    </button>
+                    {selectedBookingNos.size > 0 && (
+                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', background: 'rgba(59, 130, 246, 0.1)', padding: '0.25rem 0.75rem', borderRadius: '10px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+                            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--primary)', marginRight: '0.5rem' }}>Bulk Actions:</span>
+
+                            <select
+                                onChange={(e) => handleBulkStatusChange(e.target.value)}
+                                style={{ padding: '0.4rem', width: '120px', fontSize: '0.85rem' }}
+                                defaultValue=""
+                            >
+                                <option value="" disabled>Change Status</option>
+                                <option value="Pending">Pending</option>
+                                <option value="In Progress">In Progress</option>
+                                <option value="Pass">Pass</option>
+                                <option value="Cancelled">Cancelled</option>
+                            </select>
+
+                            <select
+                                onChange={(e) => handleBulkPickupChange(e.target.value)}
+                                style={{ padding: '0.4rem', width: '130px', fontSize: '0.85rem' }}
+                                defaultValue=""
+                            >
+                                <option value="" disabled>Change Picked?</option>
+                                <option value="Not Picked Up">Not Picked Up</option>
+                                <option value="Picked Up">Picked Up</option>
+                            </select>
+
+                            <button className="btn" onClick={handleBulkDelete} style={{ padding: '0.4rem 0.8rem', background: 'rgba(239, 68, 68, 0.1)', color: '#f87171', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+                                <Trash2 size={16} />
+                                Delete ({selectedBookingNos.size})
+                            </button>
+                        </div>
                     )}
                     <button className="btn btn-secondary" onClick={handleExport}>
-                        <FileDown size={18} /> Excel Export
+                        <FileDown size={18} />
+                        Excel Export
                     </button>
                     <button className="btn btn-secondary" onClick={() => setShowBulkPaste(true)}>
-                        <Clipboard size={18} /> Bulk Paste
+                        <Clipboard size={18} />
+                        Bulk Paste
                     </button>
                     <button className="btn btn-primary" onClick={onAddNew}>
-                        <Plus size={18} /> New Request
+                        <Plus size={18} />
+                        New Request
                     </button>
                 </div>
             </div>
 
-            <div className="glass-panel" style={{ padding: '1.5rem', marginBottom: '1rem' }}>
-                <div style={{ position: 'relative' }}>
-                    <Search size={18} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
-                    <input
-                        placeholder="Search by container, booking, customer..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        style={{ paddingLeft: '3rem', width: '100%' }}
-                    />
+            <div className="glass-panel" style={{ padding: '1.5rem', marginBottom: '2rem' }}>
+                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <div style={{ position: 'relative', flex: '1 1 200px' }}>
+                        <Search size={18} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+                        <input
+                            type="text"
+                            placeholder="Search Booking/Container..."
+                            style={{ paddingLeft: '2.5rem', width: '100%' }}
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Month</span>
+                            <select value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} style={{ width: '80px', padding: '0.4rem' }}>
+                                {months.map(m => <option key={m} value={m}>{m === 'All' ? 'Month: All' : `${m}월`}</option>)}
+                            </select>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Line / Location</span>
+                            <div style={{ display: 'flex', gap: '4px' }}>
+                                <select value={lineFilter} onChange={(e) => setLineFilter(e.target.value)} style={{ width: '100px', padding: '0.4rem' }}>
+                                    {uniqueLines.map(l => <option key={l} value={l}>{l === 'All' ? 'Line: All' : l}</option>)}
+                                </select>
+                                <select value={locFilter} onChange={(e) => setLocFilter(e.target.value)} style={{ width: '100px', padding: '0.4rem' }}>
+                                    {uniqueLocs.map(l => <option key={l} value={l}>{l === 'All' ? 'Loc: All' : l}</option>)}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button
+                        className="btn"
+                        onClick={() => setShowPickedUp(!showPickedUp)}
+                        style={{
+                            background: showPickedUp ? 'var(--primary)' : 'rgba(255,255,255,0.05)',
+                            color: showPickedUp ? '#fff' : 'var(--text-secondary)',
+                            marginTop: '1.2rem'
+                        }}
+                    >
+                        <Filter size={18} />
+                        {showPickedUp ? 'Hide Picked Up' : 'Show Picked Up'}
+                    </button>
                 </div>
             </div>
 
@@ -188,8 +346,8 @@ export default function SpecialContainerList({ records, onEdit, onDelete, onBulk
                             <th style={{ width: '40px' }}>
                                 <input
                                     type="checkbox"
-                                    checked={filteredRecords.length > 0 && selectedIds.size === filteredRecords.length}
-                                    onChange={() => setSelectedIds(selectedIds.size === filteredRecords.length ? new Set() : new Set(filteredRecords.map(r => r.id)))}
+                                    checked={groupedGroups.length > 0 && selectedBookingNos.size === groupedGroups.length}
+                                    onChange={() => toggleAllSelection(selectedBookingNos.size === groupedGroups.length, groupedGroups.map(g => g[0].bookingNo))}
                                 />
                             </th>
                             <th style={{ width: '35px', textAlign: 'center' }}>No.</th>
@@ -200,7 +358,7 @@ export default function SpecialContainerList({ records, onEdit, onDelete, onBulk
                             <th>Customer</th>
                             <th>Booking No</th>
                             <th>Container No</th>
-                            <th style={{ width: '80px' }}>Size</th>
+                            <th style={{ width: '60px' }}>Size</th>
                             <th style={{ width: '45px', cursor: 'pointer', color: sortConfig.key === 'requestDate' ? '#fbbf24' : 'inherit', fontSize: '0.75rem' }} onClick={() => toggleSort('requestDate')}>
                                 REQ <ArrowUpDown size={10} style={{ opacity: sortConfig.key === 'requestDate' ? 1 : 0.3 }} />
                             </th>
@@ -208,168 +366,198 @@ export default function SpecialContainerList({ records, onEdit, onDelete, onBulk
                                 PICK <ArrowUpDown size={10} style={{ opacity: sortConfig.key === 'pickupDate' ? 1 : 0.3 }} />
                             </th>
                             <th>Remark</th>
-                            <th style={{ width: '70px' }}>Picked?</th>
+                            <th style={{ width: '75px' }}>Picked?</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {groupedRecords.length === 0 ? (
-                            <tr><td colSpan="14" style={{ textAlign: 'center', padding: '3rem' }}>No records found.</td></tr>
-                        ) : groupedRecords.map((group, index) => {
-                            const allSelected = group.allIds.every(id => selectedIds.has(id));
-                            const someSelected = group.allIds.some(id => selectedIds.has(id)) && !allSelected;
+                        {groupedGroups.length === 0 ? (
+                            <tr>
+                                <td colSpan="14" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
+                                    No records found for current filters.
+                                </td>
+                            </tr>
+                        ) : (
+                            groupedGroups.map((group, index) => {
+                                const record = group[0];
+                                const isGroup = group.length > 1;
 
-                            return (
-                                <tr key={group.bookingNo} style={{ background: allSelected ? 'rgba(59, 130, 246, 0.05)' : 'transparent', opacity: group.ptiStatus === 'Cancelled' ? 0.6 : 1 }}>
-                                    <td style={{ textAlign: 'center', padding: '0.2rem' }}>
-                                        <input
-                                            type="checkbox"
-                                            checked={allSelected}
-                                            ref={el => {
-                                                if (el) el.indeterminate = someSelected;
-                                            }}
-                                            onChange={() => {
-                                                const newSelection = new Set(selectedIds);
-                                                if (allSelected) {
-                                                    group.allIds.forEach(id => newSelection.delete(id));
-                                                } else {
-                                                    group.allIds.forEach(id => newSelection.add(id));
-                                                }
-                                                setSelectedIds(newSelection);
-                                            }}
-                                        />
-                                    </td>
-                                    <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.8rem', padding: '0.2rem' }}>
-                                        {index + 1}
-                                    </td>
-                                    <td style={{ textAlign: 'center', padding: '0.2rem' }}>
-                                        <button onClick={() => onEdit(group)} style={{ padding: '0.3rem', background: 'rgba(59, 130, 246, 0.1)', border: 'none', borderRadius: '6px', color: '#60a5fa', cursor: 'pointer' }}><Edit2 size={12} /></button>
-                                    </td>
-                                    <td style={{ padding: '0.2rem' }}>
-                                        <select
-                                            value={group.ptiStatus || 'Pending'}
-                                            onChange={(e) => {
-                                                group.allIds.forEach(id => {
-                                                    const record = records.find(r => r.id === id);
-                                                    if (record) handleStatusUpdate(record, e.target.value);
-                                                });
-                                            }}
-                                            className={`status-badge ${group.ptiStatus === 'Pass' ? 'status-completed' : group.ptiStatus === 'In Progress' ? 'status-progress' : group.ptiStatus === 'Cancelled' ? 'status-cancelled' : 'status-pending'}`}
-                                            style={{ border: 'none', width: '100%', cursor: 'pointer', outline: 'none', background: 'transparent', fontSize: '0.75rem', padding: '2px' }}
-                                        >
-                                            <option value="Pending">Pending</option>
-                                            <option value="In Progress">In Progress</option>
-                                            <option value="Pass">Pass</option>
-                                            <option value="Cancelled">Cancelled</option>
-                                        </select>
-                                    </td>
-                                    <td style={{ fontSize: '0.85rem', padding: '0.2rem' }}>{group.shippingLine}</td>
-                                    <td
-                                        style={{ fontSize: '0.85rem', cursor: 'pointer', padding: '0.2rem' }}
-                                        onDoubleClick={() => setEditingLocationBookingNo(group.bookingNo)}
-                                        title="Double click to edit"
-                                    >
-                                        {editingLocationBookingNo === group.bookingNo ? (
+                                return (
+                                    <tr key={record.id} style={{ background: selectedBookingNos.has(record.bookingNo) ? 'rgba(59, 130, 246, 0.05)' : 'transparent' }}>
+                                        <td style={{ textAlign: 'center', padding: '0.2rem' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedBookingNos.has(record.bookingNo)}
+                                                onChange={() => toggleSelection(record.bookingNo)}
+                                            />
+                                        </td>
+                                        <td style={{ padding: '0.2rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                                            {index + 1}
+                                        </td>
+                                        <td style={{ padding: '0.2rem' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'center' }}>
+                                                <button onClick={() => onEdit(record)} style={{ padding: '0.3rem', background: 'rgba(59, 130, 246, 0.1)', border: 'none', borderRadius: '6px', color: '#60a5fa', cursor: 'pointer' }}><Edit2 size={12} /></button>
+                                            </div>
+                                        </td>
+                                        <td style={{ padding: '0.2rem' }}>
                                             <select
-                                                defaultValue={group.location}
-                                                autoFocus
-                                                onBlur={(e) => handleLocationUpdate(group, e.target.value)}
-                                                onChange={(e) => handleLocationUpdate(group, e.target.value)}
-                                                style={{
-                                                    width: '100%',
-                                                    padding: '0.2rem',
-                                                    fontSize: '0.85rem',
-                                                    border: '1px solid var(--primary)',
-                                                    borderRadius: '4px',
-                                                    background: '#fff',
-                                                    color: '#000'
-                                                }}
+                                                value={record.ptiStatus || 'Pending'}
+                                                onChange={(e) => group.forEach(r => handleStatusUpdate(r, e.target.value))}
+                                                className={`status-badge ${record.ptiStatus === 'Pass' ? 'status-completed' : record.ptiStatus === 'In Progress' ? 'status-progress' : record.ptiStatus === 'Cancelled' ? 'status-cancelled' : 'status-pending'}`}
+                                                style={{ border: 'none', width: '100%', cursor: 'pointer', outline: 'none', background: 'transparent', fontSize: '0.75rem', padding: '2px' }}
                                             >
-                                                <option value="">Select</option>
-                                                <option value="SNCT">SNCT</option>
-                                                <option value="HJIT">HJIT</option>
-                                                <option value="ICT">ICT</option>
-                                                <option value="E1">E1</option>
+                                                <option value="Pending">Pending</option>
+                                                <option value="In Progress">In Progress</option>
+                                                <option value="Pass">Pass</option>
+                                                <option value="Cancelled">Cancelled</option>
                                             </select>
-                                        ) : (
-                                            group.location || '-'
-                                        )}
-                                    </td>
-                                    <td style={{ fontSize: '0.85rem', maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', padding: '0.2rem' }} title={group.customer}>{group.customer || '-'}</td>
-                                    <td style={{ fontSize: '0.85rem', fontWeight: 700, padding: '0.2rem' }}>{group.bookingNo}</td>
-                                    <td style={{ padding: '0.2rem' }}>
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                                            {group.containers.map((cntr, idx) => (
-                                                <div key={cntr.id}>
-                                                    <span style={{ color: 'var(--accent)', fontWeight: 600, fontSize: '0.85rem' }}>
-                                                        {cntr.containerNo || '-'}
-                                                    </span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </td>
-                                    <td style={{ padding: '0.2rem' }}>
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                                            {group.containers.map((cntr, idx) => (
-                                                <div key={cntr.id}>
-                                                    <span style={{
-                                                        fontSize: '0.75rem',
-                                                        background: 'rgba(255,255,255,0.05)',
-                                                        padding: '2px 6px',
+                                        </td>
+                                        <td style={{ padding: '0.2rem', fontSize: '0.85rem' }}>{record.shippingLine}</td>
+                                        <td
+                                            style={{ padding: '0.2rem', fontSize: '0.85rem', cursor: 'pointer' }}
+                                            onDoubleClick={() => setEditingLocationBookingNo(record.bookingNo)}
+                                            title="Double click to edit"
+                                        >
+                                            {editingLocationBookingNo === record.bookingNo ? (
+                                                <select
+                                                    defaultValue={record.location}
+                                                    autoFocus
+                                                    onBlur={(e) => handleLocationUpdate(record, e.target.value)}
+                                                    onChange={(e) => handleLocationUpdate(record, e.target.value)}
+                                                    style={{
+                                                        width: '100%',
+                                                        padding: '0.3rem',
+                                                        fontSize: '0.85rem',
+                                                        border: '2px solid var(--primary)',
                                                         borderRadius: '4px',
-                                                        minWidth: '45px',
-                                                        textAlign: 'center',
-                                                        display: 'inline-block'
-                                                    }}>
-                                                        {cntr.size}
-                                                    </span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </td>
-                                    <td style={{ fontSize: '0.85rem', color: '#fbbf24', fontWeight: 600, padding: '0.2rem' }}>
-                                        {group.requestDate ? group.requestDate.split('-').slice(1).join('/') : ''}
-                                    </td>
-                                    <td style={{ padding: '0.2rem' }}>
-                                        <div
-                                            style={{ color: '#fbbf24', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer' }}
-                                            onClick={() => {
-                                                const date = prompt('Enter Pickup Date (YYYY-MM-DD):', group.pickupDate || '');
-                                                if (date !== null) {
-                                                    group.allIds.forEach(id => {
-                                                        const record = records.find(r => r.id === id);
-                                                        if (record) onEdit({ ...record, pickupDate: date });
-                                                    });
-                                                }
-                                            }}
+                                                        background: '#fff',
+                                                        color: '#000'
+                                                    }}
+                                                >
+                                                    <option value="">Select</option>
+                                                    <option value="SNCT">SNCT</option>
+                                                    <option value="HJIT">HJIT</option>
+                                                    <option value="ICT">ICT</option>
+                                                    <option value="E1">E1</option>
+                                                </select>
+                                            ) : (
+                                                record.location || '-'
+                                            )}
+                                        </td>
+                                        <td
+                                            style={{ padding: '0.2rem', maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '0.85rem', cursor: 'pointer' }}
+                                            title={editingCustomerBookingNo === record.bookingNo ? "Press Enter to save" : "Double click to edit"}
+                                            onDoubleClick={() => setEditingCustomerBookingNo(record.bookingNo)}
                                         >
-                                            {group.pickupDate ? group.pickupDate.split('-').slice(1).join('/') : '-'}
-                                        </div>
-                                    </td>
-                                    <td style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0.2rem' }} title={group.remarks}>
-                                        {group.remarks || '-'}
-                                    </td>
-                                    <td style={{ padding: '0.2rem' }}>
-                                        <button
-                                            onClick={() => {
-                                                const newStatus = group.pickupStatus === 'Picked Up' ? 'Not Picked Up' : 'Picked Up';
-                                                group.allIds.forEach(id => {
-                                                    const record = records.find(r => r.id === id);
-                                                    if (record) onEdit({ ...record, pickupStatus: newStatus });
-                                                });
-                                            }}
-                                            style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem', color: group.pickupStatus === 'Picked Up' ? '#f472b6' : 'var(--text-secondary)', fontSize: '0.85rem', fontWeight: 600 }}
+                                            {editingCustomerBookingNo === record.bookingNo ? (
+                                                <input
+                                                    type="text"
+                                                    defaultValue={record.customer}
+                                                    autoFocus
+                                                    onBlur={(e) => handleCustomerUpdate(record, e.target.value)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            handleCustomerUpdate(record, e.target.value);
+                                                        } else if (e.key === 'Escape') {
+                                                            setEditingCustomerBookingNo(null);
+                                                        }
+                                                    }}
+                                                    style={{
+                                                        width: '100%',
+                                                        padding: '0.3rem',
+                                                        fontSize: '0.85rem',
+                                                        border: '2px solid var(--primary)',
+                                                        borderRadius: '4px',
+                                                        background: '#fff',
+                                                        color: '#000'
+                                                    }}
+                                                />
+                                            ) : (
+                                                record.customer || '-'
+                                            )}
+                                        </td>
+                                        <td style={{ padding: '0.2rem', fontSize: '0.85rem' }}>{record.bookingNo}</td>
+                                        <td style={{ padding: '0.2rem', fontWeight: 600, fontSize: '0.85rem' }}>
+                                            {isGroup ? group.map((r, i) => <div key={i}>{r.containerNo || '-'}</div>) : (record.containerNo || '-')}
+                                        </td>
+                                        <td style={{ padding: '0.2rem', fontSize: '0.95rem', fontWeight: 600 }}>{record.size}' {isGroup && `x${group.length}`}</td>
+                                        <td style={{ padding: '0.2rem', fontSize: '0.9rem', color: '#fbbf24', fontWeight: 600 }}>
+                                            {record.requestDate ? record.requestDate.split('-').slice(1).join('/') : ''}
+                                        </td>
+                                        <td
+                                            style={{ padding: '0.2rem', fontSize: '0.9rem', cursor: 'pointer', fontWeight: 600 }}
+                                            onDoubleClick={() => setEditingPickupBookingNo(record.bookingNo)}
+                                            title="Double click to edit"
                                         >
-                                            <Truck size={12} />
-                                            {group.pickupStatus === 'Picked Up' ? 'Done' : 'No'}
-                                        </button>
-                                    </td>
-                                </tr>
-                            );
-                        })}
+                                            {editingPickupBookingNo === record.bookingNo ? (
+                                                <input
+                                                    type="date"
+                                                    defaultValue={record.pickupDate}
+                                                    autoFocus
+                                                    onBlur={(e) => handlePickupDateUpdate(group, e.target.value)}
+                                                    onChange={(e) => {
+                                                        if (e.target.value) handlePickupDateUpdate(group, e.target.value);
+                                                    }}
+                                                    style={{
+                                                        width: '100%',
+                                                        fontSize: '0.85rem',
+                                                        padding: '2px',
+                                                        background: 'var(--bg-color)',
+                                                        color: 'var(--text-color)',
+                                                        border: '1px solid var(--primary)'
+                                                    }}
+                                                />
+                                            ) : (
+                                                record.pickupDate ? record.pickupDate.split('-').slice(1).join('/') : '-'
+                                            )}
+                                        </td>
+                                        <td
+                                            style={{ padding: '0.2rem', fontSize: '0.9rem', color: 'var(--text-secondary)', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}
+                                            onDoubleClick={() => setEditingRemarksBookingNo(record.bookingNo)}
+                                            title={editingRemarksBookingNo === record.bookingNo ? "Press Enter to save" : "Double click to edit"}
+                                        >
+                                            {editingRemarksBookingNo === record.bookingNo ? (
+                                                <input
+                                                    type="text"
+                                                    defaultValue={record.remarks}
+                                                    autoFocus
+                                                    onBlur={(e) => handleRemarksUpdate(record, e.target.value)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            handleRemarksUpdate(record, e.target.value);
+                                                        } else if (e.key === 'Escape') {
+                                                            setEditingRemarksBookingNo(null);
+                                                        }
+                                                    }}
+                                                    style={{
+                                                        width: '100%',
+                                                        padding: '0.3rem',
+                                                        fontSize: '0.85rem',
+                                                        border: '2px solid var(--primary)',
+                                                        borderRadius: '4px',
+                                                        background: '#fff',
+                                                        color: '#000'
+                                                    }}
+                                                />
+                                            ) : (
+                                                record.remarks ? record.remarks.split('\n')[0].substring(0, 10) : ''
+                                            )}
+                                        </td>
+                                        <td style={{ padding: '0.2rem' }}>
+                                            <button
+                                                onClick={() => handleGroupPickupToggle(group)}
+                                                style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem', color: record.pickupStatus === 'Picked Up' ? '#f472b6' : 'var(--text-secondary)', fontSize: '0.85rem', fontWeight: 600 }}
+                                            >
+                                                <Truck size={12} />
+                                                {record.pickupStatus === 'Picked Up' ? 'Done' : 'No'}
+                                            </button>
+                                        </td>
+                                    </tr>
+                                );
+                            })
+                        )}
                     </tbody>
                 </table>
             </div>
-
             <style>{`
                 .status-cancelled { background: rgba(239, 68, 68, 0.2) !important; color: #f87171 !important; }
                 select.status-badge { appearance: none; -webkit-appearance: none; text-align-last: center; }
@@ -378,12 +566,9 @@ export default function SpecialContainerList({ records, onEdit, onDelete, onBulk
 
             {showBulkPaste && (
                 <BulkPasteModal
-                    initialText={initialPasteData}
-                    onClose={() => {
-                        setShowBulkPaste(false);
-                        setInitialPasteData('');
-                    }}
+                    onClose={() => { setShowBulkPaste(false); setInitialPasteData(''); }}
                     onSave={handleBulkSave}
+                    initialText={initialPasteData}
                     type="SPECIAL"
                 />
             )}
