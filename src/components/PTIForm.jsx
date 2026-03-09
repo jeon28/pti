@@ -155,12 +155,19 @@ export default function PTIForm({ record, data, onClose, onSave, standalone = fa
         const newData = { ...formData };
 
         // 1. Booking No: HASLK + 11 digits or SNKO + 12 digits
+        // 1. Booking No...
         const bookingMatch = text.match(/(HASLK\d{11}|SNKO\d{12})/i);
         if (bookingMatch) {
             newData.bookingNo = bookingMatch[0].toUpperCase();
             // Prefix Logic Sync
             if (newData.bookingNo.startsWith('HASL')) newData.shippingLine = 'HAL';
             if (newData.bookingNo.startsWith('SNKO')) newData.shippingLine = 'SKR';
+
+            // Extract customer from the same line
+            const customerMatch = text.match(new RegExp(`${newData.bookingNo}\\s*\\/\\s*([^\\n]+)`, 'i'));
+            if (customerMatch) {
+                newData.customer = customerMatch[1].trim();
+            }
         }
 
         // 1-b. Container Numbers extraction (4 alpha + 7 digits)
@@ -234,16 +241,22 @@ export default function PTIForm({ record, data, onClose, onSave, standalone = fa
         }
 
         // 5. Pickup Date: YYYY.MM.DD, YY/MM/DD, MM/DD
-        const dateMatch = text.match(/\b(\d{2,4})[./-](\d{1,2})[./-](\d{1,2})\b/);
+        const dateMatch = text.match(/픽업\s*(?:일|날짜)?\s*[:=]?\s*(\d{4})[\/\-.년\s]*(\d{1,2})[\/\-.월\s]*(\d{1,2})[일\s]*/) ||
+            text.match(/\b(\d{4})[\/\-.년\s]+(\d{1,2})[\/\-.월\s]+(\d{1,2})[일\s]*/) ||
+            text.match(/\b(\d{4})(\d{2})(\d{2})\b/) ||
+            text.match(/\b(\d{1,2})[\/\-.월\s]+(\d{1,2})[일\s]*/);
+
         if (dateMatch) {
-            let [_, y, m, d] = dateMatch;
-            if (y.length === 2) y = "20" + y;
-            newData.pickupDate = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
-        } else {
-            const shortDateMatch = text.match(/\b(\d{1,2})[./-](\d{1,2})\b/);
-            if (shortDateMatch) {
-                const year = new Date().getFullYear();
-                newData.pickupDate = `${year}-${shortDateMatch[1].padStart(2, '0')}-${shortDateMatch[2].padStart(2, '0')}`;
+            const currentYear = new Date().getFullYear();
+            if (dateMatch[1] && dateMatch[2] && dateMatch[3]) { // YYYY MM DD
+                const year = dateMatch[1].length === 2 ? `20${dateMatch[1]}` : dateMatch[1];
+                const month = dateMatch[2].padStart(2, '0');
+                const day = dateMatch[3].padStart(2, '0');
+                newData.pickupDate = `${year}-${month}-${day}`;
+            } else if (dateMatch[1] && dateMatch[2]) { // MM DD
+                const month = dateMatch[1].padStart(2, '0');
+                const day = dateMatch[2].padStart(2, '0');
+                newData.pickupDate = `${currentYear}-${month}-${day}`;
             }
         }
 
@@ -313,7 +326,7 @@ export default function PTIForm({ record, data, onClose, onSave, standalone = fa
         );
 
         if (duplicate) {
-            const confirmMsg = `주의: [${formData.bookingNo}] 부킹번호가 이미 시스템에 존재합니다.\n\n동일한 부킹번호로 계속 진행하시겠습니까?`;
+            const confirmMsg = `알림: [${formData.bookingNo}] 부킹번호가 이미 시스템에 존재합니다.\n\n기존 부킹에 현재 입력한 컨테이너들을 추가로 저장하시겠습니까?`;
             if (!window.confirm(confirmMsg)) {
                 return;
             }

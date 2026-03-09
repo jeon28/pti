@@ -35,7 +35,7 @@ export default function SpecialContainerList({ records, onEdit, onDelete, onBulk
             }
 
             const pastedText = e.clipboardData?.getData('text');
-            if (pastedText && pastedText.includes('\t')) {
+            if (pastedText && pastedText.trim().length > 5) {
                 e.preventDefault();
                 setInitialPasteData(pastedText);
                 setShowBulkPaste(true);
@@ -353,10 +353,10 @@ export default function SpecialContainerList({ records, onEdit, onDelete, onBulk
                             <th style={{ width: '35px', textAlign: 'center' }}>No.</th>
                             <th style={{ width: '45px', textAlign: 'center' }}>Edit</th>
                             <th style={{ width: '100px' }}>Status</th>
-                            <th style={{ width: '80px' }}>Line</th>
-                            <th style={{ width: '80px' }}>Location</th>
-                            <th>Customer</th>
-                            <th>Booking No</th>
+                            <th style={{ width: '45px' }}>Line</th>
+                            <th style={{ width: '55px' }}>CY</th>
+                            <th style={{ width: '135px' }}>Customer</th>
+                            <th style={{ width: '130px' }}>Booking No</th>
                             <th>Container No</th>
                             <th style={{ width: '60px' }}>Size</th>
                             <th style={{ width: '45px', cursor: 'pointer', color: sortConfig.key === 'requestDate' ? '#fbbf24' : 'inherit', fontSize: '0.75rem' }} onClick={() => toggleSort('requestDate')}>
@@ -444,7 +444,7 @@ export default function SpecialContainerList({ records, onEdit, onDelete, onBulk
                                             )}
                                         </td>
                                         <td
-                                            style={{ padding: '0.2rem', maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '0.85rem', cursor: 'pointer' }}
+                                            style={{ padding: '0.2rem', maxWidth: '135px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.85rem', cursor: 'pointer' }}
                                             title={editingCustomerBookingNo === record.bookingNo ? "Press Enter to save" : "Double click to edit"}
                                             onDoubleClick={() => setEditingCustomerBookingNo(record.bookingNo)}
                                         >

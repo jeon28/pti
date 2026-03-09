@@ -189,6 +189,12 @@ export default function SpecialContainerForm({ record, data, onClose, onSave }) 
             newData.bookingNo = bookingMatch[0].toUpperCase();
             if (newData.bookingNo.startsWith('HASL')) newData.shippingLine = 'HAL';
             if (newData.bookingNo.startsWith('SNKO')) newData.shippingLine = 'SKR';
+
+            // Extract customer from the same line
+            const customerMatch = text.match(new RegExp(`${newData.bookingNo}\\s*\\/\\s*([^\\n]+)`, 'i'));
+            if (customerMatch) {
+                newData.customer = customerMatch[1].trim();
+            }
         }
 
         // Extract container numbers (standard format: 4 letters + 7 digits)
@@ -247,21 +253,30 @@ export default function SpecialContainerForm({ record, data, onClose, onSave }) 
             });
         }
 
-        // Extract date in M/D or MM/DD format (pickup date)
-        // Patterns: "2/11", "02/11", "12/25", etc.
-        const dateMatch = text.match(/(?:픽업\s*날짜\s*[:：]\s*)?(\d{1,2})[\/\-.](\d{1,2})(?!\d)/);
-        if (dateMatch) {
-            let [_, m, d] = dateMatch;
-            const currentYear = new Date().getFullYear();
-            newData.pickupDate = `${currentYear}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
-        }
+        // 5. Pickup Date: YYYY.MM.DD, YY/MM/DD, MM/DD
+        const dateMatch = text.match(/픽업\s*(?:일|날짜)?\s*[:=]?\s*(\d{4})[\/\-.년\s]*(\d{1,2})[\/\-.월\s]*(\d{1,2})[일\s]*/) ||
+            text.match(/\b(\d{4})[\/\-.년\s]+(\d{1,2})[\/\-.월\s]+(\d{1,2})[일\s]*/) ||
+            text.match(/\b(\d{4})(\d{2})(\d{2})\b/) ||
+            text.match(/\b(\d{1,2})[\/\-.월\s]+(\d{1,2})[일\s]*/);
 
-        // Also try full date format (YYYY-MM-DD or similar)
-        const fullDateMatch = text.match(/\b(\d{2,4})[./-](\d{1,2})[./-](\d{1,2})\b/);
-        if (fullDateMatch && !dateMatch) {
-            let [_, y, m, d] = fullDateMatch;
-            if (y.length === 2) y = "20" + y;
-            newData.pickupDate = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+        if (dateMatch) {
+            const currentYear = new Date().getFullYear();
+            if (dateMatch[1] && dateMatch[2] && dateMatch[3]) { // YYYY MM DD
+                const year = dateMatch[1].length === 2 ? `20${dateMatch[1]}` : dateMatch[1];
+                const month = dateMatch[2].padStart(2, '0');
+                const day = dateMatch[3].padStart(2, '0');
+                newData.pickupDate = `${year}-${month}-${day}`;
+            } else if (dateMatch[1] && dateMatch[2]) { // MM DD
+                const month = dateMatch[1].padStart(2, '0');
+                const day = dateMatch[2].padStart(2, '0');
+                newData.pickupDate = `${currentYear}-${month}-${day}`;
+            }
+        } else {
+            const shortDateMatch = text.match(/\b(\d{1,2})[./-](\d{1,2})\b/);
+            if (shortDateMatch) {
+                const year = new Date().getFullYear();
+                newData.pickupDate = `${year}-${shortDateMatch[1].padStart(2, '0')}-${shortDateMatch[2].padStart(2, '0')}`;
+            }
         }
 
         setFormData(newData);
@@ -306,6 +321,22 @@ export default function SpecialContainerForm({ record, data, onClose, onSave }) 
         if (invalidContainers.length > 0) {
             alert(`오류: 컨테이너 번호 형식이 올바르지 않습니다 ([${invalidContainers.map(c => c.no).join(', ')}]).\n영문 4자리 + 숫자 7개 형식으로 입력해 주세요.`);
             return;
+        }
+
+        // Check for duplicate Booking No
+        const existingRecords = await getPTIRecords('SPECIAL');
+        const isEditing = !!record;
+
+        const duplicate = existingRecords.find(r =>
+            r.bookingNo?.trim().toLowerCase() === formData.bookingNo.trim().toLowerCase() &&
+            (!isEditing || r.bookingNo !== record.bookingNo)
+        );
+
+        if (duplicate) {
+            const confirmMsg = `알림: [${formData.bookingNo}] 부킹번호가 이미 시스템에 존재합니다.\n\n기존 부킹에 현재 입력한 컨테이너들을 추가로 저장하시겠습니까?`;
+            if (!window.confirm(confirmMsg)) {
+                return;
+            }
         }
 
         const recordsToSave = containerList.map(cntr => ({

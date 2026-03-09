@@ -20,18 +20,15 @@ export default function BulkPasteModal({ onClose, onSave, initialText = '', type
         if (hasTabDelimiters) {
             // Parse tab-delimited Excel data
             parseTabDelimitedData(textToParse);
-        } else if (type === 'SPECIAL') {
-            // Parse free-form text for Special Containers
-            parseFreeFormText(textToParse);
         } else {
-            // For PTI, require tab-delimited data
-            parseTabDelimitedData(textToParse);
+            // Parse free-form text (Smart Paste logic) for both SPECIAL and PTI
+            parseFreeFormText(textToParse);
         }
     };
 
     const parseFreeFormText = (text) => {
-        // Split by numbered items (1., 2., 3., etc.) - handle dots and tabs/spaces
-        const itemPattern = /(?:^|\n)\s*\d+\.?\s+/;
+        // Split by double newlines or numbered items (1., 2., 3., etc.)
+        const itemPattern = /\n\s*\n|(?:\n|^)\s*\d+\.?\s+/;
         const items = text.split(itemPattern).filter(item => item.trim());
 
         const newData = items.map((item, idx) => {
@@ -43,15 +40,31 @@ export default function BulkPasteModal({ onClose, onSave, initialText = '', type
             if (bookingNo.startsWith('HASL')) shippingLine = 'HAL';
             else if (bookingNo.startsWith('SNKO')) shippingLine = 'SKR';
 
-            // Extract pickup date (M/D or MM/DD format)
-            // Look for date following "픽업 날짜" or just a date pattern
-            const dateMatch = item.match(/(?:픽업\s*날짜\s*[:：]\s*)?(\d{1,2})[\/\-.](\d{1,2})(?!\d)/);
+            // Extract customer from line with booking number
+            let customer = '';
+            const customerMatch = item.match(new RegExp(`${bookingNo}\\s*\\/\\s*([^\\n]+)`, 'i'));
+            if (customerMatch) {
+                customer = customerMatch[1].trim();
+            }
+
+            // Extract pickup date (M/D, MM/DD format, or "02 월 26 일")
+            const dateMatch = item.match(/픽업\s*(?:일|날짜)?\s*[:=]?\s*(\d{4})[\/\-.년\s]*(\d{1,2})[\/\-.월\s]*(\d{1,2})[일\s]*/) ||
+                item.match(/\b(\d{4})[\/\-.년\s]+(\d{1,2})[\/\-.월\s]+(\d{1,2})[일\s]*/) ||
+                item.match(/\b(\d{4})(\d{2})(\d{2})\b/) ||
+                item.match(/\b(\d{1,2})[\/\-.월\s]+(\d{1,2})[일\s]*/);
             let pickupDate = '';
             if (dateMatch) {
                 const currentYear = new Date().getFullYear();
-                const month = dateMatch[1].padStart(2, '0');
-                const day = dateMatch[2].padStart(2, '0');
-                pickupDate = `${currentYear}-${month}-${day}`;
+                if (dateMatch[1] && dateMatch[2] && dateMatch[3]) { // YYYY MM DD
+                    const year = dateMatch[1].length === 2 ? `20${dateMatch[1]}` : dateMatch[1];
+                    const month = dateMatch[2].padStart(2, '0');
+                    const day = dateMatch[3].padStart(2, '0');
+                    pickupDate = `${year}-${month}-${day}`;
+                } else if (dateMatch[1] && dateMatch[2]) { // MM DD
+                    const month = dateMatch[1].padStart(2, '0');
+                    const day = dateMatch[2].padStart(2, '0');
+                    pickupDate = `${currentYear}-${month}-${day}`;
+                }
             }
 
             // Extract container numbers (format: 4 letters + 7 digits)
@@ -59,9 +72,9 @@ export default function BulkPasteModal({ onClose, onSave, initialText = '', type
             const foundContainers = [...item.matchAll(containerRegex)].map(m => m[1].toUpperCase());
 
             // Extract size and quantity
-            // Pattern: "42PC X 1", "22PC  X 3", etc. (handles multiple spaces)
-            const sizeQtyMatch = item.match(/(\d{2}(?:PC|UT|FLAT|FR|OT))\s*[xX*×]\s*(\d{1,2})/i) ||
-                item.match(/사이즈\s*[:：]\s*(\d{2}(?:PC|UT|FLAT|FR|OT))\s*[xX*×]\s*(\d{1,2})/i);
+            // Pattern: "42PC X 1", "22PC  X 3", "RF22REx1" etc. (handles multiple spaces)
+            const sizeQtyMatch = item.match(/([a-zA-Z]{0,2}\d{2}(?:PC|UT|FLAT|FR|OT|RE|RT|OPEN))\s*[xX*×]\s*(\d{1,2})/i) ||
+                item.match(/사이즈\s*[:：]\s*(\d{2}(?:PC|UT|FLAT|FR|OT|RE|RT|OPEN))\s*[xX*×]\s*(\d{1,2})/i);
             let size = '42PC';
             let quantity = 1;
 
@@ -70,23 +83,46 @@ export default function BulkPasteModal({ onClose, onSave, initialText = '', type
                 quantity = parseInt(sizeQtyMatch[2], 10);
 
                 // Normalize size
-                if (sizeStr.match(/^(20|22).*(PC|FLAT|FR)/i)) size = '22PC';
-                else if (sizeStr.match(/^(20|22).*(UT|OT)/i)) size = '22UT';
-                else if (sizeStr.match(/^40.*(PC|FLAT|FR)/i)) size = '42PC';
-                else if (sizeStr.match(/^45.*(PC|FLAT|FR)/i)) size = '45PC';
-                else if (sizeStr.match(/^(40|42).*(UT|OT)/i)) size = '42UT';
-                else size = sizeStr;
+                if (sizeStr.match(/^(?:RF|)[2](0|2).*(PC|FLAT|FR)/i)) size = '22PC';
+                else if (sizeStr.match(/^(?:RF|)[2](0|2).*(UT|OT|OPEN)/i)) size = '22UT';
+                else if (sizeStr.match(/^(?:RF|)40.*(PC|FLAT|FR)/i)) size = '42PC';
+                else if (sizeStr.match(/^(?:RF|)45.*(PC|FLAT|FR)/i)) size = '45PC';
+                else if (sizeStr.match(/^(?:RF|)(40|42).*(UT|OT|OPEN)/i)) size = '42UT';
+                else if (sizeStr.match(/RE/i)) size = sizeStr.replace('RF', ''); // keep 22RE or 42RE 
+                else size = sizeStr.replace('RF', '');
             } else {
                 // Try fallback for size without quantity if "X" is missing
-                const sizeOnlyMatch = item.match(/(\d{2}(?:PC|UT|FLAT|FR|OT))/i);
+                const sizeOnlyMatch = item.match(/([a-zA-Z]{0,2}\d{2}(?:PC|UT|FLAT|FR|OT|RE|RT|OPEN))/i);
                 if (sizeOnlyMatch) {
                     const sizeStr = sizeOnlyMatch[1].toUpperCase();
-                    if (sizeStr.match(/^(20|22).*(PC|FLAT|FR)/i)) size = '22PC';
-                    else if (sizeStr.match(/^(20|22).*(UT|OT)/i)) size = '22UT';
-                    else if (sizeStr.match(/^40.*(PC|FLAT|FR)/i)) size = '42PC';
-                    else if (sizeStr.match(/^45.*(PC|FLAT|FR)/i)) size = '45PC';
-                    else if (sizeStr.match(/^(40|42).*(UT|OT)/i)) size = '42UT';
-                    else size = sizeStr;
+                    if (sizeStr.match(/^(?:RF|)[2](0|2).*(PC|FLAT|FR)/i)) size = '22PC';
+                    else if (sizeStr.match(/^(?:RF|)[2](0|2).*(UT|OT|OPEN)/i)) size = '22UT';
+                    else if (sizeStr.match(/^(?:RF|)40.*(PC|FLAT|FR)/i)) size = '42PC';
+                    else if (sizeStr.match(/^(?:RF|)45.*(PC|FLAT|FR)/i)) size = '45PC';
+                    else if (sizeStr.match(/^(?:RF|)(40|42).*(UT|OT|OPEN)/i)) size = '42UT';
+                    else if (sizeStr.match(/RE|RT/i)) size = sizeStr.replace('RF', ''); // keep 22RE or 42RE 
+                    else size = sizeStr.replace('RF', '');
+                }
+            }
+
+            // Smart parsing for PTI specific fields (Temp, Vent, etc.)
+            let temperature = '';
+            let vent = type === 'PTI' ? 'CLOSED' : '';
+            if (type === 'PTI') {
+                const tempLabeledMatch = item.match(/(?:Temp|온도)\s*[:=]?\s*([+-]?\d+(?:\.\d+)?)/i);
+                const tempUnitMatch = item.match(/\b([+-]?\d{1,2}(?:\.\d+)?)\s*(?:도|'C|C|°C)\b/i);
+                const tempSignedMatch = item.match(/(?<![\d/-])[+-]\d{1,2}(?:\.\d+)?(?!\d)/);
+                if (tempLabeledMatch) temperature = tempLabeledMatch[1];
+                else if (tempUnitMatch) temperature = tempUnitMatch[1];
+                else if (tempSignedMatch) temperature = tempSignedMatch[0];
+
+                const ventMatch = item.match(/(?:VENT|환기구|개폐구|환기|VENTILATION)\s*[:=]?\s*(CLOSE|CLOSED|OPEN|\d+)\s*%?/i);
+                if (ventMatch) {
+                    const val = ventMatch[1].toUpperCase();
+                    if (val === 'CLOSE' || val === 'CLOSED' || val === '0') vent = 'CLOSED';
+                    else vent = val;
+                } else if (item.match(/CLOSE|CLOSED/i)) {
+                    vent = 'CLOSED';
                 }
             }
 
@@ -100,19 +136,19 @@ export default function BulkPasteModal({ onClose, onSave, initialText = '', type
                         id: `bulk-${Date.now()}-${idx}-${i}`,
                         shippingLine: shippingLine,
                         location: '',
-                        customer: '',
+                        customer: customer,
                         bookingNo: bookingNo,
                         containerNo: containerNo,
                         size: size,
-                        temperature: '',
-                        vent: '',
+                        temperature: temperature,
+                        vent: vent,
                         humidity: '',
                         requestDate: new Date().toISOString().split('T')[0],
                         pickupDate: pickupDate,
                         ptiStatus: 'In Progress', // Has container number
                         remarks: '',
                         pickupStatus: 'Not Picked Up',
-                        type: 'SPECIAL'
+                        type: type
                     });
                 });
             } else {
@@ -122,19 +158,19 @@ export default function BulkPasteModal({ onClose, onSave, initialText = '', type
                         id: `bulk-${Date.now()}-${idx}-${i}`,
                         shippingLine: shippingLine,
                         location: '',
-                        customer: '',
+                        customer: customer,
                         bookingNo: bookingNo,
                         containerNo: '',
                         size: size,
-                        temperature: '',
-                        vent: '',
+                        temperature: temperature,
+                        vent: vent,
                         humidity: '',
                         requestDate: new Date().toISOString().split('T')[0],
                         pickupDate: pickupDate,
                         ptiStatus: 'Pending', // No container number yet
                         remarks: '',
                         pickupStatus: 'Not Picked Up',
-                        type: 'SPECIAL'
+                        type: type
                     });
                 }
             }
@@ -147,127 +183,211 @@ export default function BulkPasteModal({ onClose, onSave, initialText = '', type
 
     const parseTabDelimitedData = (text) => {
         const lines = text.split('\n');
-        const newData = lines
+        const rows = lines
             .map(line => line.split('\t'))
-            .filter(cols => cols.length >= 2)
-            .map((cols, idx) => {
-                // Skip header if present
-                const firstCol = cols[0]?.toUpperCase() || '';
-                if (idx === 0 && (firstCol.includes('BOOKING') || firstCol.includes('BKG'))) {
-                    return null;
-                }
+            .filter(cols => cols.some(col => col.trim().length > 0)); // Filter out completely empty rows
 
-                // Column mapping based on user's Excel format:
-                // PTI: 0:BKG | 1:CNTR | 2:SIZE | 3:TEMP | 4:VENT | 5:HUM | 6:REQ | 7:PICK
-                // SPECIAL: More flexible - can have BKG, CNTR, SIZE, and dates anywhere
+        if (rows.length === 0) return;
 
-                let bookingNo = cols[0]?.trim() || '';
-                let shippingLine = '';
-                let location = '';
-                let customer = '';
+        // --- Helper Regexes ---
+        const isBooking = (val) => val.match(/^(HASL|SNKO)[A-Z0-9]{5,}/i);
+        const isContainer = (val) => val.match(/^[A-Z]{4}\d{7}$/i);
+        const isSizeOrQty = (val) => val.match(/(20|22|40|42|45).*(PC|UT|FLAT|FR|OT|RE|OPEN)/i);
+        const isLocation = (val) => val.match(/^(SNCT|HJIT|ICT|E1)$/i);
+        const isShippingLine = (val) => val.match(/^(HAL|SKR)$/i);
+        const isDate = (val) => val.match(/\d{1,4}[/\-.년\s]*\d{1,2}[/\-.월\s]*\d{1,2}[일\s]*/);
+        const isTemp = (val) => val.match(/^[-+]?\d+(\.\d+)?\s*(C|F|도)?$/i);
 
-                // Booking No -> Shipping Line Mapping
-                const bkgUpper = bookingNo.toUpperCase();
-                if (bkgUpper.startsWith('HASL')) shippingLine = 'HAL';
-                else if (bkgUpper.startsWith('SNKO')) shippingLine = 'SKR';
+        // --- 1. Find the first row that contains actual data (not headers) ---
+        let firstDataRowIdx = 0;
+        for (let i = 0; i < rows.length; i++) {
+            const cols = rows[i];
+            const upperStr = cols.join(' ').toUpperCase();
+            // Header heuristic
+            if (upperStr.includes('BOOKING') || upperStr.includes('BKG') || upperStr.includes('LOCATION') || upperStr.includes('LINE')) {
+                continue; // Skip header
+            }
+            if (cols.some(c => isBooking(c.trim()) || isContainer(c.trim()) || isSizeOrQty(c.trim()))) {
+                firstDataRowIdx = i;
+                break;
+            }
+        }
 
-                // Auto-detect Location from all columns
-                const allText = cols.join(' ').toUpperCase();
-                if (allText.includes('SNCT')) location = 'SNCT';
-                else if (allText.includes('HJIT')) location = 'HJIT';
-                else if (allText.includes('ICT') && !allText.includes('HJIT')) location = 'ICT';
-                else if (allText.includes('E1')) location = 'E1';
+        const firstDataRow = rows[firstDataRowIdx] || rows[0];
 
-                // Auto-detect Customer from columns (look for common customer patterns)
-                // Check columns beyond the standard ones for customer names
-                for (let i = 0; i < cols.length; i++) {
-                    const col = cols[i]?.trim() || '';
-                    // Skip if it's a booking, container, size, or date
-                    if (col.match(/^(HASL|SNKO)/i)) continue;
-                    if (col.match(/^[A-Z]{4}\d{7}$/)) continue;
-                    if (col.match(/^\d{1,2}[\/\-\.]\d{1,2}/)) continue;
-                    if (col.match(/^(22|42|45)(PC|UT|RE)/i)) continue;
-                    if (col.match(/^(SNCT|HJIT|ICT|E1)$/i)) continue;
-                    if (col.match(/^\d+$/)) continue; // Skip pure numbers
-                    if (col.length > 2 && col.length < 50 && !customer) {
-                        customer = col;
-                    }
-                }
+        // --- 2. Infer column indices based on the FIRST data row's format & lengths ---
+        const colMap = {
+            booking: -1,
+            container: -1,
+            size: -1,
+            pickupDate: -1,
+            requestDate: -1,
+            temp: -1,
+            location: -1,
+            customer: -1,
+            shippingLine: -1,
+            vent: -1,
+            remark: -1
+        };
 
-                // Auto-detect status based on container number presence
-                let status = 'Pending';
-                const containerNo = cols[1]?.trim() || '';
-                if (containerNo && containerNo.length > 0) {
-                    status = 'In Progress';
-                }
+        let dateColumns = [];
 
-                // Parse dates in MM/DD format
-                const parseDateMMDD = (dateStr) => {
-                    if (!dateStr || dateStr.trim() === '') return '';
+        firstDataRow.forEach((col, idx) => {
+            const val = col.trim();
+            if (!val) return;
 
-                    const trimmed = dateStr.trim();
-                    const currentYear = new Date().getFullYear();
+            if (colMap.booking === -1 && isBooking(val)) colMap.booking = idx;
+            else if (colMap.container === -1 && isContainer(val)) colMap.container = idx;
+            else if (colMap.size === -1 && isSizeOrQty(val)) colMap.size = idx;
+            else if (colMap.location === -1 && isLocation(val)) colMap.location = idx;
+            else if (colMap.shippingLine === -1 && isShippingLine(val)) colMap.shippingLine = idx;
+            else if (isDate(val)) dateColumns.push(idx);
+            else if (type === 'PTI' && colMap.temp === -1 && isTemp(val) && !val.match(/^(20|22|40|42|45)/)) colMap.temp = idx;
+        });
 
-                    // Try MM/DD format
-                    const mmddMatch = trimmed.match(/^(\d{1,2})[\/\-.](\d{1,2})$/);
-                    if (mmddMatch) {
-                        const month = mmddMatch[1].padStart(2, '0');
-                        const day = mmddMatch[2].padStart(2, '0');
-                        return `${currentYear}-${month}-${day}`;
-                    }
+        // Assign dates
+        if (dateColumns.length === 1) {
+            colMap.pickupDate = dateColumns[0];
+            if (type === 'PTI') colMap.requestDate = dateColumns[0]; // Optional fallback
+        } else if (dateColumns.length >= 2) {
+            // Heuristic: earlier date might be request date, later is pickup date
+            colMap.requestDate = dateColumns[0];
+            colMap.pickupDate = dateColumns[1];
+        }
 
-                    // Try YYYY-MM-DD or YYYY/MM/DD format
-                    const fullDateMatch = trimmed.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/);
-                    if (fullDateMatch) {
-                        const year = fullDateMatch[1];
-                        const month = fullDateMatch[2].padStart(2, '0');
-                        const day = fullDateMatch[3].padStart(2, '0');
-                        return `${year}-${month}-${day}`;
-                    }
+        // Assign customer & remark
+        firstDataRow.forEach((col, idx) => {
+            const val = col.trim();
+            if (!val) return;
+            if (Object.values(colMap).includes(idx) || dateColumns.includes(idx)) return;
 
-                    // Return as-is if already in correct format or unparseable
-                    return trimmed;
-                };
+            if (type === 'PTI' && colMap.vent === -1 && val.match(/^(CLOSED|OPEN|\d+\s*(CM|%))$/i)) {
+                colMap.vent = idx;
+                return;
+            }
 
-                // Parse size - normalize to standard format
-                let size = cols[2]?.trim() || '';
-                if (type === 'SPECIAL') {
-                    // Normalize size formats for Special Containers
-                    const sizeUpper = size.toUpperCase();
-                    if (sizeUpper.match(/^(20|22).*(PC|FLAT|FR)/i)) size = '22PC';
-                    else if (sizeUpper.match(/^(20|22).*(UT|OT|OPEN)/i)) size = '22UT';
-                    else if (sizeUpper.match(/^40.*(PC|FLAT|FR)/i)) size = '42PC';
-                    else if (sizeUpper.match(/^45.*(PC|FLAT|FR)/i)) size = '45PC';
-                    else if (sizeUpper.match(/^(40|42).*(UT|OT|OPEN)/i)) size = '42UT';
-                    else if (!size) size = '42PC'; // Default
+            if (colMap.customer === -1 && isNaN(Number(val)) && val.length > 1) {
+                colMap.customer = idx;
+            } else if (colMap.remark === -1) {
+                colMap.remark = idx;
+            }
+        });
+
+        // Date parser (Handles M/D, YYYY-MM-DD, 02 월 26 일)
+        const parseDateDynamic = (dateStr) => {
+            if (!dateStr || dateStr.trim() === '') return '';
+            let trimmed = dateStr.trim();
+
+            trimmed = trimmed.replace(/\s*년\s*/g, '-').replace(/\s*월\s*/g, '-').replace(/\s*일\s*/g, '');
+            trimmed = trimmed.replace(/[/\.]/g, '-');
+
+            const currentYear = new Date().getFullYear();
+
+            let match = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+            if (match) {
+                return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
+            }
+            match = trimmed.match(/^(\d{1,2})-(\d{1,2})$/);
+            if (match) {
+                return `${currentYear}-${match[1].padStart(2, '0')}-${match[2].padStart(2, '0')}`;
+            }
+
+            const numbers = dateStr.match(/\d+/g);
+            if (numbers && numbers.length >= 2) {
+                if (numbers[0].length === 4) {
+                    return `${numbers[0]}-${numbers[1].padStart(2, '0')}-${(numbers[2] || '01').padStart(2, '0')}`;
                 } else {
-                    if (!size) size = '40RE'; // Default for PTI
+                    return `${currentYear}-${numbers[0].padStart(2, '0')}-${numbers[1].padStart(2, '0')}`;
+                }
+            }
+            return dateStr;
+        };
+
+        // --- 3. Process all rows based on colMap ---
+        const newData = [];
+
+        rows.slice(firstDataRowIdx).forEach((cols, idx) => {
+            const getVal = (idxNum) => (idxNum !== -1 && cols[idxNum] !== undefined) ? cols[idxNum].trim() : '';
+
+            let bookingNo = getVal(colMap.booking);
+            let containerNo = getVal(colMap.container);
+            let sizeQtyRaw = getVal(colMap.size);
+            let location = getVal(colMap.location);
+            let shippingLine = getVal(colMap.shippingLine);
+            let customer = getVal(colMap.customer);
+            let pickupDateRaw = getVal(colMap.pickupDate);
+            let tempRaw = getVal(colMap.temp);
+            let ventRaw = getVal(colMap.vent);
+            let remarkRaw = getVal(colMap.remark);
+
+            // Fallback: search per row if colMap missed it or row is unstructured
+            if (!bookingNo) bookingNo = (cols.find(c => isBooking(c.trim())) || '').trim();
+            if (!containerNo) containerNo = (cols.find(c => isContainer(c.trim())) || '').trim();
+            if (!sizeQtyRaw) sizeQtyRaw = (cols.find(c => isSizeOrQty(c.trim())) || '').trim();
+
+            if (!shippingLine && bookingNo) {
+                if (bookingNo.toUpperCase().startsWith('HASL')) shippingLine = 'HAL';
+                else if (bookingNo.toUpperCase().startsWith('SNKO')) shippingLine = 'SKR';
+            }
+
+            if (!bookingNo && !containerNo) return; // Skip invalid rows
+
+            let size = type === 'PTI' ? '40RE' : '42PC';
+            let quantity = 1;
+
+            if (sizeQtyRaw) {
+                const sMatch = sizeQtyRaw.match(/(\d{2}(?:PC|UT|FLAT|FR|OT|RE|OPEN))/i);
+                if (sMatch) {
+                    const s = sMatch[1].toUpperCase();
+                    if (s.match(/^(20|22).*(PC|FLAT|FR)/i)) size = '22PC';
+                    else if (s.match(/^(20|22).*(UT|OT|OPEN)/i)) size = '22UT';
+                    else if (s.match(/^40.*(PC|FLAT|FR)/i)) size = '42PC';
+                    else if (s.match(/^45.*(PC|FLAT|FR)/i)) size = '45PC';
+                    else if (s.match(/^(40|42).*(UT|OT|OPEN)/i)) size = '42UT';
+                    else size = s;
                 }
 
-                return {
-                    id: `bulk-${Date.now()}-${idx}`,
+                if (type === 'SPECIAL') {
+                    const qMatch = sizeQtyRaw.match(/[xX*×]\s*(\d{1,2})/);
+                    if (qMatch) {
+                        quantity = parseInt(qMatch[1], 10);
+                    }
+                }
+            }
+
+            const pickupDate = parseDateDynamic(pickupDateRaw);
+            const requestDate = type === 'PTI'
+                ? (parseDateDynamic(getVal(colMap.requestDate)) || new Date().toISOString().split('T')[0])
+                : new Date().toISOString().split('T')[0];
+
+            let status = 'Pending';
+            if (containerNo && containerNo.length > 0) {
+                status = 'In Progress';
+            }
+
+            const count = (type === 'SPECIAL' && !containerNo && quantity > 1) ? quantity : 1;
+
+            for (let i = 0; i < count; i++) {
+                newData.push({
+                    id: `bulk-${Date.now()}-${idx}-${i}`,
                     shippingLine: shippingLine,
                     location: location,
                     customer: customer,
                     bookingNo: bookingNo,
-                    containerNo: containerNo,
+                    containerNo: count > 1 ? '' : containerNo,
                     size: size,
-                    temperature: type === 'SPECIAL' ? '' : (cols[3]?.trim() || ''),
-                    vent: type === 'SPECIAL' ? '' : (cols[4]?.trim() || 'CLOSED'),
-                    humidity: type === 'SPECIAL' ? '' : (cols[5]?.trim() || ''),
-                    requestDate: type === 'SPECIAL'
-                        ? new Date().toISOString().split('T')[0]
-                        : (parseDateMMDD(cols[6]) || new Date().toISOString().split('T')[0]),
-                    pickupDate: type === 'SPECIAL'
-                        ? (parseDateMMDD(cols[3]) || parseDateMMDD(cols[4]) || parseDateMMDD(cols[5]) || parseDateMMDD(cols[6]) || parseDateMMDD(cols[7]) || '')
-                        : (parseDateMMDD(cols[7]) || ''),
-                    ptiStatus: status,
-                    remarks: '',
+                    temperature: type === 'SPECIAL' ? '' : tempRaw,
+                    vent: type === 'SPECIAL' ? '' : (ventRaw || 'CLOSED'),
+                    humidity: '',
+                    requestDate: requestDate,
+                    pickupDate: pickupDate,
+                    ptiStatus: count > 1 ? 'Pending' : status,
+                    remarks: remarkRaw,
                     pickupStatus: 'Not Picked Up',
                     type: type
-                };
-            })
-            .filter(Boolean);
+                });
+            }
+        });
 
         setParsedData(newData);
     };
@@ -489,7 +609,13 @@ export default function BulkPasteModal({ onClose, onSave, initialText = '', type
 
                                             return (
                                                 <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', transition: 'background 0.2s' }}>
-                                                    <td style={{ padding: '0.75rem 1rem', fontSize: '0.9rem' }}>{row.shippingLine}</td>
+                                                    <td style={{ padding: '0.5rem' }}>
+                                                        <input
+                                                            value={row.shippingLine || ''}
+                                                            onChange={(e) => updateField(i, 'shippingLine', e.target.value)}
+                                                            style={{ width: '100%', padding: '0.5rem', fontSize: '0.9rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff' }}
+                                                        />
+                                                    </td>
                                                     <td style={{ padding: '0.5rem' }}>
                                                         <select
                                                             value={row.location}
@@ -529,16 +655,54 @@ export default function BulkPasteModal({ onClose, onSave, initialText = '', type
                                                             }}
                                                         />
                                                     </td>
-                                                    <td style={{ padding: '0.75rem 1rem', fontWeight: 600, fontSize: '0.9rem' }}>{row.bookingNo}</td>
-                                                    <td style={{ padding: '0.75rem 1rem', color: 'var(--primary)', fontSize: '0.9rem' }}>{row.containerNo}</td>
-                                                    <td style={{ padding: '0.75rem 1rem', fontSize: '0.9rem' }}>{row.size}</td>
+                                                    <td style={{ padding: '0.5rem' }}>
+                                                        <input
+                                                            value={row.bookingNo || ''}
+                                                            onChange={(e) => updateField(i, 'bookingNo', e.target.value)}
+                                                            style={{ width: '100%', padding: '0.5rem', fontSize: '0.9rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff' }}
+                                                        />
+                                                    </td>
+                                                    <td style={{ padding: '0.5rem' }}>
+                                                        <input
+                                                            value={row.containerNo || ''}
+                                                            onChange={(e) => updateField(i, 'containerNo', e.target.value)}
+                                                            style={{ width: '100%', padding: '0.5rem', fontSize: '0.9rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: 'var(--primary)' }}
+                                                        />
+                                                    </td>
+                                                    <td style={{ padding: '0.5rem' }}>
+                                                        <input
+                                                            value={row.size || ''}
+                                                            onChange={(e) => updateField(i, 'size', e.target.value)}
+                                                            style={{ width: '100%', padding: '0.5rem', fontSize: '0.9rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff' }}
+                                                        />
+                                                    </td>
                                                     {type === 'PTI' && (
                                                         <>
-                                                            <td style={{ padding: '0.75rem 1rem', fontSize: '0.9rem', fontWeight: 600, color: '#60a5fa' }}>{row.temperature}</td>
-                                                            <td style={{ padding: '0.75rem 1rem', fontSize: '0.9rem', color: '#fbbf24' }}>{formatDateMMDD(row.requestDate)}</td>
+                                                            <td style={{ padding: '0.5rem' }}>
+                                                                <input
+                                                                    value={row.temperature || ''}
+                                                                    onChange={(e) => updateField(i, 'temperature', e.target.value)}
+                                                                    style={{ width: '100%', padding: '0.5rem', fontSize: '0.9rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#60a5fa' }}
+                                                                />
+                                                            </td>
+                                                            <td style={{ padding: '0.5rem' }}>
+                                                                <input
+                                                                    type="date"
+                                                                    value={row.requestDate || ''}
+                                                                    onChange={(e) => updateField(i, 'requestDate', e.target.value)}
+                                                                    style={{ width: '100%', padding: '0.5rem', fontSize: '0.9rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fbbf24' }}
+                                                                />
+                                                            </td>
                                                         </>
                                                     )}
-                                                    <td style={{ padding: '0.75rem 1rem', fontSize: '0.9rem', color: '#fbbf24' }}>{formatDateMMDD(row.pickupDate)}</td>
+                                                    <td style={{ padding: '0.5rem' }}>
+                                                        <input
+                                                            type="date"
+                                                            value={row.pickupDate || ''}
+                                                            onChange={(e) => updateField(i, 'pickupDate', e.target.value)}
+                                                            style={{ width: '100%', padding: '0.5rem', fontSize: '0.9rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fbbf24' }}
+                                                        />
+                                                    </td>
                                                     <td style={{ padding: '0.5rem' }}>
                                                         <select
                                                             value={row.ptiStatus}
