@@ -251,3 +251,10 @@ tr:hover td {
 .animate-fade-in {
   animation: fadeIn 0.4s ease-out forwards;
 }
+
+/* Responsive Hide Sidebar */
+@media (max-width: 1024px) {
+  .sidebar-container {
+    display: none !important;
+  }
+}

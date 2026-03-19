@@ -112,7 +112,7 @@ function AdminMain() {
 
   return (
     <div style={{ display: 'flex', height: '100vh', width: '100vw', background: 'var(--bg-color)', overflow: 'hidden' }}>
-      <div style={{ width: '260px', minWidth: '260px', display: 'flex' }}>
+      <div className="sidebar-container" style={{ width: '260px', minWidth: '260px', display: 'flex' }}>
         <Sidebar currentView={currentView} setView={setCurrentView} />
       </div>
 
