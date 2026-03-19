@@ -25,3 +25,4 @@ dist-ssr
 
 # SQLite Database
 pti.db
+pti_backup.db
