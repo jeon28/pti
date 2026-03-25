@@ -403,12 +403,38 @@ export default function BulkPasteModal({ onClose, onSave, initialText = '', type
         setPastedText('');
     };
 
-    const updateField = (index, field, value) => {
-        setParsedData(prev => {
-            const updated = [...prev];
-            updated[index] = { ...updated[index], [field]: value };
-            return updated;
+    const groupedData = useMemo(() => {
+        if (type !== 'SPECIAL') return parsedData.map(r => [r]);
+        const groups = {};
+        const orderedKeys = [];
+        parsedData.forEach(r => {
+            const key = r.bookingNo || `temp-${r.id}`;
+            if (!groups[key]) {
+                groups[key] = [];
+                orderedKeys.push(key);
+            }
+            groups[key].push(r);
         });
+        return orderedKeys.map(k => groups[k]);
+    }, [parsedData, type]);
+
+    const updateGroupField = (groupIdx, field, value) => {
+        const group = groupedData[groupIdx];
+        const ids = group.map(r => r.id);
+        
+        setParsedData(prev => prev.map(r => {
+            if (ids.includes(r.id)) {
+                return { ...r, [field]: value };
+            }
+            return r;
+        }));
+    };
+
+    const updateSingleField = (id, field, value) => {
+        setParsedData(prev => prev.map(r => {
+            if (r.id === id) return { ...r, [field]: value };
+            return r;
+        }));
     };
 
     return (
@@ -581,19 +607,9 @@ export default function BulkPasteModal({ onClose, onSave, initialText = '', type
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {parsedData.map((row, i) => {
-                                            // Format dates as MM/DD
-                                            const formatDateMMDD = (dateStr) => {
-                                                if (!dateStr) return '';
-                                                try {
-                                                    const date = new Date(dateStr);
-                                                    const month = String(date.getMonth() + 1).padStart(2, '0');
-                                                    const day = String(date.getDate()).padStart(2, '0');
-                                                    return `${month}/${day}`;
-                                                } catch {
-                                                    return dateStr;
-                                                }
-                                            };
+                                        {groupedData.map((group, groupIdx) => {
+                                            const row = group[0];
+                                            const isSpecial = type === 'SPECIAL';
 
                                             // Get status color
                                             const getStatusColor = (status) => {
@@ -608,18 +624,18 @@ export default function BulkPasteModal({ onClose, onSave, initialText = '', type
                                             const statusColors = getStatusColor(row.ptiStatus);
 
                                             return (
-                                                <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', transition: 'background 0.2s' }}>
+                                                <tr key={groupIdx} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', transition: 'background 0.2s' }}>
                                                     <td style={{ padding: '0.5rem' }}>
                                                         <input
                                                             value={row.shippingLine || ''}
-                                                            onChange={(e) => updateField(i, 'shippingLine', e.target.value)}
+                                                            onChange={(e) => updateGroupField(groupIdx, 'shippingLine', e.target.value)}
                                                             style={{ width: '100%', padding: '0.5rem', fontSize: '0.9rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff' }}
                                                         />
                                                     </td>
                                                     <td style={{ padding: '0.5rem' }}>
                                                         <select
-                                                            value={row.location}
-                                                            onChange={(e) => updateField(i, 'location', e.target.value)}
+                                                            value={row.location || ''}
+                                                            onChange={(e) => updateGroupField(groupIdx, 'location', e.target.value)}
                                                             style={{
                                                                 width: '100%',
                                                                 padding: '0.5rem',
@@ -641,8 +657,8 @@ export default function BulkPasteModal({ onClose, onSave, initialText = '', type
                                                     <td style={{ padding: '0.5rem' }}>
                                                         <input
                                                             type="text"
-                                                            value={row.customer}
-                                                            onChange={(e) => updateField(i, 'customer', e.target.value)}
+                                                            value={row.customer || ''}
+                                                            onChange={(e) => updateGroupField(groupIdx, 'customer', e.target.value)}
                                                             placeholder="Customer"
                                                             style={{
                                                                 width: '100%',
@@ -658,21 +674,35 @@ export default function BulkPasteModal({ onClose, onSave, initialText = '', type
                                                     <td style={{ padding: '0.5rem' }}>
                                                         <input
                                                             value={row.bookingNo || ''}
-                                                            onChange={(e) => updateField(i, 'bookingNo', e.target.value)}
+                                                            onChange={(e) => updateGroupField(groupIdx, 'bookingNo', e.target.value)}
                                                             style={{ width: '100%', padding: '0.5rem', fontSize: '0.9rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff' }}
                                                         />
                                                     </td>
                                                     <td style={{ padding: '0.5rem' }}>
-                                                        <input
-                                                            value={row.containerNo || ''}
-                                                            onChange={(e) => updateField(i, 'containerNo', e.target.value)}
-                                                            style={{ width: '100%', padding: '0.5rem', fontSize: '0.9rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: 'var(--primary)' }}
-                                                        />
+                                                        {isSpecial ? (
+                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                                {group.map((r, ri) => (
+                                                                    <input
+                                                                        key={ri}
+                                                                        value={r.containerNo || ''}
+                                                                        onChange={(e) => updateSingleField(r.id, 'containerNo', e.target.value)}
+                                                                        style={{ width: '100%', padding: '0.3rem', fontSize: '0.85rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: 'var(--primary)' }}
+                                                                        placeholder={`Container ${ri + 1}`}
+                                                                    />
+                                                                ))}
+                                                            </div>
+                                                        ) : (
+                                                            <input
+                                                                value={row.containerNo || ''}
+                                                                onChange={(e) => updateGroupField(groupIdx, 'containerNo', e.target.value)}
+                                                                style={{ width: '100%', padding: '0.5rem', fontSize: '0.9rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: 'var(--primary)' }}
+                                                            />
+                                                        )}
                                                     </td>
                                                     <td style={{ padding: '0.5rem' }}>
                                                         <input
                                                             value={row.size || ''}
-                                                            onChange={(e) => updateField(i, 'size', e.target.value)}
+                                                            onChange={(e) => updateGroupField(groupIdx, 'size', e.target.value)}
                                                             style={{ width: '100%', padding: '0.5rem', fontSize: '0.9rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fff' }}
                                                         />
                                                     </td>
@@ -681,7 +711,7 @@ export default function BulkPasteModal({ onClose, onSave, initialText = '', type
                                                             <td style={{ padding: '0.5rem' }}>
                                                                 <input
                                                                     value={row.temperature || ''}
-                                                                    onChange={(e) => updateField(i, 'temperature', e.target.value)}
+                                                                    onChange={(e) => updateGroupField(groupIdx, 'temperature', e.target.value)}
                                                                     style={{ width: '100%', padding: '0.5rem', fontSize: '0.9rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#60a5fa' }}
                                                                 />
                                                             </td>
@@ -689,7 +719,7 @@ export default function BulkPasteModal({ onClose, onSave, initialText = '', type
                                                                 <input
                                                                     type="date"
                                                                     value={row.requestDate || ''}
-                                                                    onChange={(e) => updateField(i, 'requestDate', e.target.value)}
+                                                                    onChange={(e) => updateGroupField(groupIdx, 'requestDate', e.target.value)}
                                                                     style={{ width: '100%', padding: '0.5rem', fontSize: '0.9rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fbbf24' }}
                                                                 />
                                                             </td>
@@ -699,14 +729,14 @@ export default function BulkPasteModal({ onClose, onSave, initialText = '', type
                                                         <input
                                                             type="date"
                                                             value={row.pickupDate || ''}
-                                                            onChange={(e) => updateField(i, 'pickupDate', e.target.value)}
+                                                            onChange={(e) => updateGroupField(groupIdx, 'pickupDate', e.target.value)}
                                                             style={{ width: '100%', padding: '0.5rem', fontSize: '0.9rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: '#fbbf24' }}
                                                         />
                                                     </td>
                                                     <td style={{ padding: '0.5rem' }}>
                                                         <select
                                                             value={row.ptiStatus}
-                                                            onChange={(e) => updateField(i, 'ptiStatus', e.target.value)}
+                                                            onChange={(e) => updateGroupField(groupIdx, 'ptiStatus', e.target.value)}
                                                             style={{
                                                                 width: '100%',
                                                                 padding: '0.5rem',
@@ -729,7 +759,7 @@ export default function BulkPasteModal({ onClose, onSave, initialText = '', type
                                                         <input
                                                             type="text"
                                                             value={row.remarks || ''}
-                                                            onChange={(e) => updateField(i, 'remarks', e.target.value)}
+                                                            onChange={(e) => updateGroupField(groupIdx, 'remarks', e.target.value)}
                                                             placeholder="Remark"
                                                             style={{
                                                                 width: '100%',

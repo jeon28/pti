@@ -91,18 +91,27 @@ export default function SpecialContainerList({ records, onEdit, onDelete, onBulk
     }, [filteredRecords]);
 
     const handleExport = () => {
-        const dataToExport = filteredRecords.map(r => ({
-            'BOOKING NO': r.bookingNo,
-            'CNTR NO': r.containerNo,
-            'SIZE': r.size,
-            'LOCATION': r.location,
-            'CUSTOMER': r.customer,
-            'LINE': r.shippingLine,
-            'STATUS': r.ptiStatus,
-            'REQ DATE': r.requestDate,
-            'PICK DATE': r.pickupDate,
-            'REMARK': r.remarks
-        }));
+        const dataToExport = groupedGroups.map(group => {
+            const r = group[0];
+            const containerNos = group.map(g => g.containerNo || '-').join(', ');
+            const sizes = group.map(g => {
+                if (!g.containerNo) return g.size;
+                return `${g.containerNo}(${g.size})`;
+            }).join(', ');
+
+            return {
+                'BOOKING NO': r.bookingNo,
+                'CNTR NO': containerNos,
+                'SIZE': group.length > 1 ? `${r.size} x ${group.length}` : r.size,
+                'LOCATION': r.location,
+                'CUSTOMER': r.customer,
+                'LINE': r.shippingLine,
+                'STATUS': r.ptiStatus,
+                'REQ DATE': r.requestDate,
+                'PICK DATE': r.pickupDate,
+                'REMARK': r.remarks
+            };
+        });
 
         const ws = XLSX.utils.json_to_sheet(dataToExport);
         const wb = XLSX.utils.book_new();
@@ -152,20 +161,26 @@ export default function SpecialContainerList({ records, onEdit, onDelete, onBulk
         await onRefresh();
     };
 
-    const handleLocationUpdate = async (record, newLocation) => {
-        await updatePTIRecord({ ...record, location: newLocation });
+    const handleLocationUpdate = async (group, newLocation) => {
+        for (const r of group) {
+            await updatePTIRecord({ ...r, location: newLocation });
+        }
         setEditingLocationBookingNo(null);
         await onRefresh();
     };
 
-    const handleCustomerUpdate = async (record, newCustomer) => {
-        await updatePTIRecord({ ...record, customer: newCustomer });
+    const handleCustomerUpdate = async (group, newCustomer) => {
+        for (const r of group) {
+            await updatePTIRecord({ ...r, customer: newCustomer });
+        }
         setEditingCustomerBookingNo(null);
         await onRefresh();
     };
 
-    const handleRemarksUpdate = async (record, newRemarks) => {
-        await updatePTIRecord({ ...record, remarks: newRemarks });
+    const handleRemarksUpdate = async (group, newRemarks) => {
+        for (const r of group) {
+            await updatePTIRecord({ ...r, remarks: newRemarks });
+        }
         setEditingRemarksBookingNo(null);
         await onRefresh();
     };
@@ -421,8 +436,8 @@ export default function SpecialContainerList({ records, onEdit, onDelete, onBulk
                                                 <select
                                                     defaultValue={record.location}
                                                     autoFocus
-                                                    onBlur={(e) => handleLocationUpdate(record, e.target.value)}
-                                                    onChange={(e) => handleLocationUpdate(record, e.target.value)}
+                                                    onBlur={(e) => handleLocationUpdate(group, e.target.value)}
+                                                    onChange={(e) => handleLocationUpdate(group, e.target.value)}
                                                     style={{
                                                         width: '100%',
                                                         padding: '0.3rem',
@@ -453,10 +468,10 @@ export default function SpecialContainerList({ records, onEdit, onDelete, onBulk
                                                     type="text"
                                                     defaultValue={record.customer}
                                                     autoFocus
-                                                    onBlur={(e) => handleCustomerUpdate(record, e.target.value)}
+                                                    onBlur={(e) => handleCustomerUpdate(group, e.target.value)}
                                                     onKeyDown={(e) => {
                                                         if (e.key === 'Enter') {
-                                                            handleCustomerUpdate(record, e.target.value);
+                                                            handleCustomerUpdate(group, e.target.value);
                                                         } else if (e.key === 'Escape') {
                                                             setEditingCustomerBookingNo(null);
                                                         }
@@ -520,10 +535,10 @@ export default function SpecialContainerList({ records, onEdit, onDelete, onBulk
                                                     type="text"
                                                     defaultValue={record.remarks}
                                                     autoFocus
-                                                    onBlur={(e) => handleRemarksUpdate(record, e.target.value)}
+                                                    onBlur={(e) => handleRemarksUpdate(group, e.target.value)}
                                                     onKeyDown={(e) => {
                                                         if (e.key === 'Enter') {
-                                                            handleRemarksUpdate(record, e.target.value);
+                                                            handleRemarksUpdate(group, e.target.value);
                                                         } else if (e.key === 'Escape') {
                                                             setEditingRemarksBookingNo(null);
                                                         }
