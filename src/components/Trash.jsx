@@ -14,13 +14,31 @@ export default function TrashView({ onRefresh }) {
         load();
     }, []);
 
-    const filteredTrash = trashData.filter(r =>
-        Object.values(r).some(val => String(val).toLowerCase().includes(searchTerm.toLowerCase()))
-    );
+    const groupedTrash = useMemo(() => {
+        const filtered = trashData.filter(r =>
+            Object.values(r).some(val => String(val).toLowerCase().includes(searchTerm.toLowerCase()))
+        );
 
-    const handleRestore = async (record) => {
+        const groups = {};
+        const orderedKeys = [];
+        filtered.forEach(r => {
+            const bkg = (r.bookingNo || '').trim();
+            const key = bkg ? bkg : `unique-${r.id}`;
+            if (!groups[key]) {
+                groups[key] = [];
+                orderedKeys.push(key);
+            }
+            groups[key].push(r);
+        });
+        return orderedKeys.map(k => groups[k]);
+    }, [trashData, searchTerm]);
+
+    const handleRestore = async (group) => {
+        const record = group[0];
         if (confirm(`[${record.bookingNo}] 부킹 데이터를 복구하시겠습니까?`)) {
-            await recoverFromTrash(record);
+            for (const r of group) {
+                await recoverFromTrash(r);
+            }
             const nextTrash = await getTrashRecords();
             setTrashData(nextTrash);
             onRefresh();
@@ -80,40 +98,45 @@ export default function TrashView({ onRefresh }) {
                         </tr>
                     </thead>
                     <tbody>
-                        {filteredTrash.length === 0 ? (
+                        {groupedTrash.length === 0 ? (
                             <tr>
                                 <td colSpan="6" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
                                     Trash is empty.
                                 </td>
                             </tr>
                         ) : (
-                            filteredTrash.map((record) => (
-                                <tr key={record.id}>
-                                    <td style={{ padding: '0.5rem' }}>
-                                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                            <button
-                                                title="Restore"
-                                                onClick={() => handleRestore(record)}
-                                                style={{ padding: '0.4rem', background: 'rgba(16, 185, 129, 0.1)', border: 'none', borderRadius: '6px', color: '#34d399', cursor: 'pointer' }}
-                                            >
-                                                <RotateCcw size={16} />
-                                            </button>
-                                            <button
-                                                title="Delete Permanently"
-                                                onClick={() => handlePermanentDelete(record.id)}
-                                                style={{ padding: '0.4rem', background: 'rgba(239, 68, 68, 0.1)', border: 'none', borderRadius: '6px', color: '#f87171', cursor: 'pointer' }}
-                                            >
-                                                <Trash size={16} />
-                                            </button>
-                                        </div>
-                                    </td>
-                                    <td style={{ padding: '0.5rem', fontSize: '0.85rem' }}>{new Date(record.deletedAt).toLocaleString()}</td>
-                                    <td style={{ padding: '0.5rem' }}>{record.bookingNo}</td>
-                                    <td style={{ padding: '0.5rem' }}>{record.containerNo}</td>
-                                    <td style={{ padding: '0.5rem' }}>{record.location}</td>
-                                    <td style={{ padding: '0.5rem' }}>{record.customer}</td>
-                                </tr>
-                            ))
+                            groupedTrash.map((group) => {
+                                const record = group[0];
+                                return (
+                                    <tr key={record.id}>
+                                        <td style={{ padding: '0.5rem' }}>
+                                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                                <button
+                                                    title="Restore"
+                                                    onClick={() => handleRestore(group)}
+                                                    style={{ padding: '0.4rem', background: 'rgba(16, 185, 129, 0.1)', border: 'none', borderRadius: '6px', color: '#34d399', cursor: 'pointer' }}
+                                                >
+                                                    <RotateCcw size={16} />
+                                                </button>
+                                                <button
+                                                    title="Delete Permanently"
+                                                    onClick={() => handlePermanentDelete(record.id)}
+                                                    style={{ padding: '0.4rem', background: 'rgba(239, 68, 68, 0.1)', border: 'none', borderRadius: '6px', color: '#f87171', cursor: 'pointer' }}
+                                                >
+                                                    <Trash size={16} />
+                                                </button>
+                                            </div>
+                                        </td>
+                                        <td style={{ padding: '0.5rem', fontSize: '0.85rem' }}>{new Date(record.deletedAt).toLocaleString()}</td>
+                                        <td style={{ padding: '0.5rem' }}>{record.bookingNo}</td>
+                                        <td style={{ padding: '0.5rem' }}>
+                                            {group.map((r, i) => <div key={i}>{r.containerNo || '-'}</div>)}
+                                        </td>
+                                        <td style={{ padding: '0.5rem' }}>{record.location}</td>
+                                        <td style={{ padding: '0.5rem' }}>{record.customer}</td>
+                                    </tr>
+                                );
+                            })
                         )}
                     </tbody>
                 </table>

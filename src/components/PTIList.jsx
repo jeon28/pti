@@ -50,43 +50,14 @@ export default function PTIList({ records, onEdit, onDelete, onBulkDelete, onRef
     const months = ['All', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
 
     // Filter & Sort Logic
-    const sortedAndFilteredRecords = useMemo(() => {
-        let result = records.filter(r => {
-            const matchesSearch = Object.values(r).some(val =>
-                String(val).toLowerCase().includes(searchTerm.toLowerCase())
-            );
-            const matchesPickup = showPickedUp ? true : r.pickupStatus !== 'Picked Up';
-            const matchesLine = lineFilter === 'All' || r.shippingLine === lineFilter;
-            const matchesLoc = locFilter === 'All' || r.location === locFilter;
-
-            // Month Filter (based on requestDate YYYY-MM-DD)
-            const recordMonth = r.requestDate ? r.requestDate.split('-')[1] : '';
-            const matchesMonth = monthFilter === 'All' || recordMonth === monthFilter;
-
-            // Pickup Date Filter
-            const matchesPickupDate = !pickupDateFilter || r.pickupDate === pickupDateFilter;
-
-            return matchesSearch && matchesPickup && matchesLine && matchesLoc && matchesMonth && matchesPickupDate;
-        });
-
-        if (sortConfig.key) {
-            result.sort((a, b) => {
-                const aVal = a[sortConfig.key] || '';
-                const bVal = b[sortConfig.key] || '';
-                if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
-                if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
-                return 0;
-            });
-        }
-        return result;
-    }, [records, searchTerm, showPickedUp, lineFilter, locFilter, monthFilter, pickupDateFilter, sortConfig]);
-
-    const groupedGroups = useMemo(() => {
+    // Group ALL records by booking number first
+    const allGroups = useMemo(() => {
         const groups = {};
         const orderedKeys = [];
 
-        sortedAndFilteredRecords.forEach(record => {
-            const key = record.bookingNo ? record.bookingNo : `unique-${record.id}`;
+        records.forEach(record => {
+            const bkg = (record.bookingNo || '').trim();
+            const key = bkg ? bkg : `unique-${record.id}`;
             if (!groups[key]) {
                 groups[key] = [];
                 orderedKeys.push(key);
@@ -94,8 +65,45 @@ export default function PTIList({ records, onEdit, onDelete, onBulkDelete, onRef
             groups[key].push(record);
         });
 
-        return orderedKeys.map(key => groups[key]);
-    }, [sortedAndFilteredRecords]);
+        const result = orderedKeys.map(key => groups[key]);
+        
+        if (sortConfig.key) {
+            result.sort((a, b) => {
+                const aVal = a[0][sortConfig.key] || '';
+                const bVal = b[0][sortConfig.key] || '';
+                if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+                if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }
+        return result;
+    }, [records, sortConfig]);
+
+    // Filter these groups
+    const filteredGroups = useMemo(() => {
+        return allGroups.filter(group => {
+            const first = group[0];
+            
+            const matchesSearch = group.some(r => 
+                Object.values(r).some(val => 
+                    String(val).toLowerCase().includes(searchTerm.toLowerCase())
+                )
+            );
+
+            const matchesPickup = showPickedUp ? true : first.pickupStatus !== 'Picked Up';
+            const matchesLine = lineFilter === 'All' || first.shippingLine === lineFilter;
+            const matchesLoc = locFilter === 'All' || first.location === locFilter;
+
+            const recordMonth = first.requestDate ? first.requestDate.split('-')[1] : '';
+            const matchesMonth = monthFilter === 'All' || recordMonth === monthFilter;
+
+            const matchesPickupDate = !pickupDateFilter || first.pickupDate === pickupDateFilter;
+
+            return matchesSearch && matchesPickup && matchesLine && matchesLoc && matchesMonth && matchesPickupDate;
+        });
+    }, [allGroups, searchTerm, showPickedUp, lineFilter, locFilter, monthFilter, pickupDateFilter]);
+
+    const groupedGroups = filteredGroups;
 
     const handleExport = () => {
         const dataToExport = sortedAndFilteredRecords.map(r => ({
@@ -200,20 +208,26 @@ export default function PTIList({ records, onEdit, onDelete, onBulkDelete, onRef
         alert(`${selectedBookingNos.size}개 부킹의 픽업 상태가 '${newStatus}'(으)로 일괄 변경되었습니다.`);
     };
 
-    const handleLocationUpdate = async (record, newLocation) => {
-        await updatePTIRecord({ ...record, location: newLocation });
+    const handleLocationUpdate = async (group, newLocation) => {
+        for (const r of group) {
+            await updatePTIRecord({ ...r, location: newLocation });
+        }
         setEditingLocationBookingNo(null);
         await onRefresh();
     };
 
-    const handleRemarksUpdate = async (record, newRemarks) => {
-        await updatePTIRecord({ ...record, remarks: newRemarks });
+    const handleRemarksUpdate = async (group, newRemarks) => {
+        for (const r of group) {
+            await updatePTIRecord({ ...r, remarks: newRemarks });
+        }
         setEditingRemarksBookingNo(null);
         await onRefresh();
     };
 
-    const handleCustomerUpdate = async (record, newCustomer) => {
-        await updatePTIRecord({ ...record, customer: newCustomer });
+    const handleCustomerUpdate = async (group, newCustomer) => {
+        for (const r of group) {
+            await updatePTIRecord({ ...r, customer: newCustomer });
+        }
         setEditingCustomerBookingNo(null);
         await onRefresh();
     };
@@ -502,8 +516,8 @@ export default function PTIList({ records, onEdit, onDelete, onBulkDelete, onRef
                                                 <select
                                                     defaultValue={record.location}
                                                     autoFocus
-                                                    onBlur={(e) => handleLocationUpdate(record, e.target.value)}
-                                                    onChange={(e) => handleLocationUpdate(record, e.target.value)}
+                                                    onBlur={(e) => handleLocationUpdate(group, e.target.value)}
+                                                    onChange={(e) => handleLocationUpdate(group, e.target.value)}
                                                     style={{
                                                         width: '100%',
                                                         padding: '0.3rem',
@@ -534,10 +548,10 @@ export default function PTIList({ records, onEdit, onDelete, onBulkDelete, onRef
                                                     type="text"
                                                     defaultValue={record.customer}
                                                     autoFocus
-                                                    onBlur={(e) => handleCustomerUpdate(record, e.target.value)}
+                                                    onBlur={(e) => handleCustomerUpdate(group, e.target.value)}
                                                     onKeyDown={(e) => {
                                                         if (e.key === 'Enter') {
-                                                            handleCustomerUpdate(record, e.target.value);
+                                                            handleCustomerUpdate(group, e.target.value);
                                                         } else if (e.key === 'Escape') {
                                                             setEditingCustomerBookingNo(null);
                                                         }
@@ -558,7 +572,15 @@ export default function PTIList({ records, onEdit, onDelete, onBulkDelete, onRef
                                         </td>
                                         <td style={{ padding: '0.2rem', fontSize: '0.85rem' }}>{record.bookingNo}</td>
                                         <td style={{ padding: '0.2rem', fontWeight: 600, fontSize: '0.85rem' }}>
-                                            {isGroup ? group.map((r, i) => <div key={i}>{r.containerNo || '-'}</div>) : (record.containerNo || '-')}
+                                            {isGroup ? (
+                                                group.some(r => r.containerNo) ? (
+                                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                        {group.map((r, i) => <div key={i}>{r.containerNo || '-'}</div>)}
+                                                    </div>
+                                                ) : (
+                                                    <span style={{ color: 'var(--text-secondary)' }}>{group.length} Units (No Data)</span>
+                                                )
+                                            ) : (record.containerNo || '-')}
                                         </td>
                                         <td style={{ padding: '0.2rem', fontSize: '0.95rem', fontWeight: 600 }}>{record.size}' {isGroup && `x${group.length}`}</td>
                                         <td style={{ padding: '0.2rem', fontSize: '0.85rem' }}>
@@ -597,8 +619,29 @@ export default function PTIList({ records, onEdit, onDelete, onBulkDelete, onRef
                                                 record.pickupDate ? record.pickupDate.split('-').slice(1).join('/') : '-'
                                             )}
                                         </td>
-                                        <td style={{ padding: '0.2rem', fontSize: '0.9rem', color: 'var(--text-secondary)', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={record.remarks}>
-                                            {record.remarks ? record.remarks.split('\n')[0].substring(0, 10) : ''}
+                                        <td
+                                            style={{ padding: '0.2rem', fontSize: '0.9rem', color: 'var(--text-secondary)', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}
+                                            onDoubleClick={() => setEditingRemarksBookingNo(record.bookingNo)}
+                                            title={editingRemarksBookingNo === record.bookingNo ? "Press Enter to save" : "Double click to edit"}
+                                        >
+                                            {editingRemarksBookingNo === record.bookingNo ? (
+                                                <input
+                                                    type="text"
+                                                    defaultValue={record.remarks}
+                                                    autoFocus
+                                                    onBlur={(e) => handleRemarksUpdate(group, e.target.value)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            handleRemarksUpdate(group, e.target.value);
+                                                        } else if (e.key === 'Escape') {
+                                                            setEditingRemarksBookingNo(null);
+                                                        }
+                                                    }}
+                                                    style={{ width: '100%', padding: '0.3rem', fontSize: '0.85rem', border: '2px solid var(--primary)', borderRadius: '4px', background: '#fff', color: '#000' }}
+                                                />
+                                            ) : (
+                                                record.remarks ? record.remarks.split('\n')[0].substring(0, 10) : ''
+                                            )}
                                         </td>
                                         <td style={{ padding: '0.2rem' }}>
                                             <button

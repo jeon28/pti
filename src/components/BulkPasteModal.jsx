@@ -404,7 +404,6 @@ export default function BulkPasteModal({ onClose, onSave, initialText = '', type
     };
 
     const groupedData = useMemo(() => {
-        if (type !== 'SPECIAL') return parsedData.map(r => [r]);
         const groups = {};
         const orderedKeys = [];
         parsedData.forEach(r => {
@@ -416,7 +415,7 @@ export default function BulkPasteModal({ onClose, onSave, initialText = '', type
             groups[key].push(r);
         });
         return orderedKeys.map(k => groups[k]);
-    }, [parsedData, type]);
+    }, [parsedData]);
 
     const updateGroupField = (groupIdx, field, value) => {
         const group = groupedData[groupIdx];
@@ -679,25 +678,17 @@ export default function BulkPasteModal({ onClose, onSave, initialText = '', type
                                                         />
                                                     </td>
                                                     <td style={{ padding: '0.5rem' }}>
-                                                        {isSpecial ? (
-                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                                                {group.map((r, ri) => (
-                                                                    <input
-                                                                        key={ri}
-                                                                        value={r.containerNo || ''}
-                                                                        onChange={(e) => updateSingleField(r.id, 'containerNo', e.target.value)}
-                                                                        style={{ width: '100%', padding: '0.3rem', fontSize: '0.85rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: 'var(--primary)' }}
-                                                                        placeholder={`Container ${ri + 1}`}
-                                                                    />
-                                                                ))}
-                                                            </div>
-                                                        ) : (
-                                                            <input
-                                                                value={row.containerNo || ''}
-                                                                onChange={(e) => updateGroupField(groupIdx, 'containerNo', e.target.value)}
-                                                                style={{ width: '100%', padding: '0.5rem', fontSize: '0.9rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', color: 'var(--primary)' }}
-                                                            />
-                                                        )}
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                            {group.map((r, ri) => (
+                                                                <input
+                                                                    key={ri}
+                                                                    value={r.containerNo || ''}
+                                                                    onChange={(e) => updateSingleField(r.id, 'containerNo', e.target.value)}
+                                                                    style={{ width: '100%', padding: '0.3rem', fontSize: '0.85rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: 'var(--primary)' }}
+                                                                    placeholder={`Container ${ri + 1}`}
+                                                                />
+                                                            ))}
+                                                        </div>
                                                     </td>
                                                     <td style={{ padding: '0.5rem' }}>
                                                         <input

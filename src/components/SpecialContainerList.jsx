@@ -52,7 +52,8 @@ export default function SpecialContainerList({ records, onEdit, onDelete, onBulk
         const orderedKeys = [];
 
         records.forEach(record => {
-            const key = record.bookingNo || `unique-${record.id}`;
+            const bkg = (record.bookingNo || '').trim();
+            const key = bkg ? bkg : `unique-${record.id}`;
             if (!groups[key]) {
                 groups[key] = [];
                 orderedKeys.push(key);
