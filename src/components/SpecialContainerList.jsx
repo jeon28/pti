@@ -46,40 +46,13 @@ export default function SpecialContainerList({ records, onEdit, onDelete, onBulk
         return () => window.removeEventListener('paste', handleGlobalPaste);
     }, []);
 
-    const filteredRecords = useMemo(() => {
-        let result = records.filter(r => {
-            const matchesSearch = Object.values(r).some(val =>
-                String(val).toLowerCase().includes(searchTerm.toLowerCase())
-            );
-            const matchesPickup = showPickedUp ? true : r.pickupStatus !== 'Picked Up';
-            const matchesLine = lineFilter === 'All' || r.shippingLine === lineFilter;
-            const matchesLoc = locFilter === 'All' || r.location === locFilter;
-
-            const recordMonth = r.requestDate ? r.requestDate.split('-')[1] : '';
-            const matchesMonth = monthFilter === 'All' || recordMonth === monthFilter;
-
-            return matchesSearch && matchesPickup && matchesLine && matchesLoc && matchesMonth;
-        });
-
-        if (sortConfig.key) {
-            result.sort((a, b) => {
-                const aVal = a[sortConfig.key] || '';
-                const bVal = b[sortConfig.key] || '';
-                if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
-                if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
-                return 0;
-            });
-        }
-        return result;
-    }, [records, searchTerm, lineFilter, locFilter, monthFilter, showPickedUp, sortConfig]);
-
-    // Group records by booking number for merged display
-    const groupedGroups = useMemo(() => {
+    // Group ALL records by booking number first
+    const allGroups = useMemo(() => {
         const groups = {};
         const orderedKeys = [];
 
-        filteredRecords.forEach(record => {
-            const key = record.bookingNo ? record.bookingNo : `unique-${record.id}`;
+        records.forEach(record => {
+            const key = record.bookingNo || `unique-${record.id}`;
             if (!groups[key]) {
                 groups[key] = [];
                 orderedKeys.push(key);
@@ -87,8 +60,45 @@ export default function SpecialContainerList({ records, onEdit, onDelete, onBulk
             groups[key].push(record);
         });
 
-        return orderedKeys.map(key => groups[key]);
-    }, [filteredRecords]);
+        const result = orderedKeys.map(key => groups[key]);
+        
+        // Sorting groups by requestDate of the first record
+        if (sortConfig.key) {
+            result.sort((a, b) => {
+                const aVal = a[0][sortConfig.key] || '';
+                const bVal = b[0][sortConfig.key] || '';
+                if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+                if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }
+        return result;
+    }, [records, sortConfig]);
+
+    // Filter these groups
+    const filteredGroups = useMemo(() => {
+        return allGroups.filter(group => {
+            const first = group[0];
+            
+            // Match search against any field in ANY record of the group
+            const matchesSearch = group.some(r => 
+                Object.values(r).some(val => 
+                    String(val).toLowerCase().includes(searchTerm.toLowerCase())
+                )
+            );
+
+            const matchesPickup = showPickedUp ? true : first.pickupStatus !== 'Picked Up';
+            const matchesLine = lineFilter === 'All' || first.shippingLine === lineFilter;
+            const matchesLoc = locFilter === 'All' || first.location === locFilter;
+
+            const recordMonth = first.requestDate ? first.requestDate.split('-')[1] : '';
+            const matchesMonth = monthFilter === 'All' || recordMonth === monthFilter;
+
+            return matchesSearch && matchesPickup && matchesLine && matchesLoc && matchesMonth;
+        });
+    }, [allGroups, searchTerm, lineFilter, locFilter, monthFilter, showPickedUp]);
+
+    const groupedGroups = filteredGroups;
 
     const handleExport = () => {
         const dataToExport = groupedGroups.map(group => {
@@ -492,7 +502,15 @@ export default function SpecialContainerList({ records, onEdit, onDelete, onBulk
                                         </td>
                                         <td style={{ padding: '0.2rem', fontSize: '0.85rem' }}>{record.bookingNo}</td>
                                         <td style={{ padding: '0.2rem', fontWeight: 600, fontSize: '0.85rem' }}>
-                                            {isGroup ? group.map((r, i) => <div key={i}>{r.containerNo || '-'}</div>) : (record.containerNo || '-')}
+                                            {isGroup ? (
+                                                group.some(r => r.containerNo) ? (
+                                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                        {group.map((r, i) => <div key={i}>{r.containerNo || '-'}</div>)}
+                                                    </div>
+                                                ) : (
+                                                    <span style={{ color: 'var(--text-secondary)' }}>{group.length} Units (No Data)</span>
+                                                )
+                                            ) : (record.containerNo || '-')}
                                         </td>
                                         <td style={{ padding: '0.2rem', fontSize: '0.95rem', fontWeight: 600 }}>{record.size}' {isGroup && `x${group.length}`}</td>
                                         <td style={{ padding: '0.2rem', fontSize: '0.9rem', color: '#fbbf24', fontWeight: 600 }}>
