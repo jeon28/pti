@@ -22,6 +22,7 @@ export default function SpecialContainerForm({ record, data, onClose, onSave }) 
         pickupStatus: 'Not Picked Up',
         pickupDate: getTwoDaysLater(),
         remarks: '',
+        doorCheck: '',
         type: 'SPECIAL'
     });
 
@@ -396,6 +397,17 @@ export default function SpecialContainerForm({ record, data, onClose, onSave }) 
                                 <option value="ICT">ICT</option>
                                 <option value="E1">E1</option>
                             </select>
+
+                            {/* Door Check */}
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.75rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={formData.doorCheck === 'Y'}
+                                    onChange={(e) => setFormData(prev => ({ ...prev, doorCheck: e.target.checked ? 'Y' : '' }))}
+                                    style={{ width: 'auto', padding: 0, margin: 0, accentColor: 'var(--primary)', cursor: 'pointer' }}
+                                />
+                                Door Check
+                            </label>
                         </div>
                         <div>
                             <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Booking No *</label>

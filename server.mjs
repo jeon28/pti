@@ -41,6 +41,7 @@ db.exec(`
     vent TEXT,
     humidity TEXT,
     email TEXT,
+    doorCheck TEXT,
     type TEXT DEFAULT 'PTI'
   );
 
@@ -60,6 +61,7 @@ db.exec(`
     vent TEXT,
     humidity TEXT,
     email TEXT,
+    doorCheck TEXT,
     deletedAt TEXT,
     type TEXT DEFAULT 'PTI'
   );
@@ -86,6 +88,21 @@ try {
         // console.log('Added remarks column to trash_records');
     }
 } catch (e) { console.error('Error adding remarks to trash_records:', e); }
+
+// Add doorCheck column if not exists (Safety update)
+try {
+    const tableInfo = db.prepare("PRAGMA table_info(pti_records)").all();
+    if (!tableInfo.some(col => col.name === 'doorCheck')) {
+        db.prepare("ALTER TABLE pti_records ADD COLUMN doorCheck TEXT").run();
+    }
+} catch (e) { console.error('Error adding doorCheck to pti_records:', e); }
+
+try {
+    const tableInfo = db.prepare("PRAGMA table_info(trash_records)").all();
+    if (!tableInfo.some(col => col.name === 'doorCheck')) {
+        db.prepare("ALTER TABLE trash_records ADD COLUMN doorCheck TEXT").run();
+    }
+} catch (e) { console.error('Error adding doorCheck to trash_records:', e); }
 
 // Migrate settings from old 'settings' table if it exists
 try {
@@ -116,12 +133,12 @@ if (rowCount.count === 0) {
     if (fs.existsSync(initialDataPath)) {
         const initialData = JSON.parse(fs.readFileSync(initialDataPath, 'utf8'));
         const insert = db.prepare(`
-            INSERT INTO pti_records (id, shippingLine, customer, bookingNo, size, containerNo, location, requestDate, ptiStatus, pickupStatus, pickupDate, temperature, vent, humidity, email, remarks, type)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO pti_records (id, shippingLine, customer, bookingNo, size, containerNo, location, requestDate, ptiStatus, pickupStatus, pickupDate, temperature, vent, humidity, email, remarks, doorCheck, type)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
         const insertMany = db.transaction((records) => {
             for (const rec of records) {
-                insert.run(rec.id, rec.shippingLine, rec.customer, rec.bookingNo, rec.size, rec.containerNo, rec.location, rec.requestDate, rec.ptiStatus, rec.pickupStatus, rec.pickupDate, rec.temperature, rec.vent, rec.humidity, rec.email, rec.remarks, rec.type || (rec.id && String(rec.id).startsWith('SPECIAL') ? 'SPECIAL' : 'PTI'));
+                insert.run(rec.id, rec.shippingLine, rec.customer, rec.bookingNo, rec.size, rec.containerNo, rec.location, rec.requestDate, rec.ptiStatus, rec.pickupStatus, rec.pickupDate, rec.temperature, rec.vent, rec.humidity, rec.email, rec.remarks, rec.doorCheck || '', rec.type || (rec.id && String(rec.id).startsWith('SPECIAL') ? 'SPECIAL' : 'PTI'));
             }
         });
         insertMany(initialData);
@@ -145,10 +162,10 @@ app.get('/api/pti', (req, res) => {
 app.post('/api/pti', (req, res) => {
     const record = req.body;
     const insert = db.prepare(`
-        INSERT INTO pti_records (id, shippingLine, customer, bookingNo, size, containerNo, location, requestDate, ptiStatus, pickupStatus, pickupDate, temperature, vent, humidity, email, remarks, type)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO pti_records (id, shippingLine, customer, bookingNo, size, containerNo, location, requestDate, ptiStatus, pickupStatus, pickupDate, temperature, vent, humidity, email, remarks, doorCheck, type)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    insert.run(record.id, record.shippingLine, record.customer, record.bookingNo, record.size, record.containerNo, record.location, record.requestDate, record.ptiStatus, record.pickupStatus, record.pickupDate, record.temperature, record.vent, record.humidity, record.email, record.remarks, record.type || 'PTI');
+    insert.run(record.id, record.shippingLine, record.customer, record.bookingNo, record.size, record.containerNo, record.location, record.requestDate, record.ptiStatus, record.pickupStatus, record.pickupDate, record.temperature, record.vent, record.humidity, record.email, record.remarks, record.doorCheck || '', record.type || 'PTI');
     syncBackup();
     res.status(201).json(record);
 });
@@ -158,10 +175,10 @@ app.put('/api/pti/:id', (req, res) => {
     const record = req.body;
     const update = db.prepare(`
         UPDATE pti_records 
-        SET shippingLine = ?, customer = ?, bookingNo = ?, size = ?, containerNo = ?, location = ?, requestDate = ?, ptiStatus = ?, pickupStatus = ?, pickupDate = ?, temperature = ?, vent = ?, humidity = ?, email = ?, remarks = ?, type = ?
+        SET shippingLine = ?, customer = ?, bookingNo = ?, size = ?, containerNo = ?, location = ?, requestDate = ?, ptiStatus = ?, pickupStatus = ?, pickupDate = ?, temperature = ?, vent = ?, humidity = ?, email = ?, remarks = ?, doorCheck = ?, type = ?
         WHERE id = ?
     `);
-    update.run(record.shippingLine, record.customer, record.bookingNo, record.size, record.containerNo, record.location, record.requestDate, record.ptiStatus, record.pickupStatus, record.pickupDate, record.temperature, record.vent, record.humidity, record.email, record.remarks, record.type || 'PTI', id);
+    update.run(record.shippingLine, record.customer, record.bookingNo, record.size, record.containerNo, record.location, record.requestDate, record.ptiStatus, record.pickupStatus, record.pickupDate, record.temperature, record.vent, record.humidity, record.email, record.remarks, record.doorCheck || '', record.type || 'PTI', id);
     syncBackup();
     res.json(record);
 });
@@ -181,14 +198,14 @@ app.get('/api/trash', (req, res) => {
 app.post('/api/trash', (req, res) => {
     const records = req.body;
     const insert = db.prepare(`
-        INSERT INTO trash_records (id, shippingLine, customer, bookingNo, size, containerNo, location, requestDate, ptiStatus, pickupStatus, pickupDate, temperature, vent, humidity, email, remarks, deletedAt, type)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO trash_records (id, shippingLine, customer, bookingNo, size, containerNo, location, requestDate, ptiStatus, pickupStatus, pickupDate, temperature, vent, humidity, email, remarks, doorCheck, deletedAt, type)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const deleteOriginal = db.prepare('DELETE FROM pti_records WHERE id = ?');
     const transfer = db.transaction((recs) => {
         const now = new Date().toISOString();
         for (const r of recs) {
-            insert.run(r.id, r.shippingLine, r.customer, r.bookingNo, r.size, r.containerNo, r.location, r.requestDate, r.ptiStatus, r.pickupStatus, r.pickupDate, r.temperature, r.vent, r.humidity, r.email, r.remarks, now, r.type || 'PTI');
+            insert.run(r.id, r.shippingLine, r.customer, r.bookingNo, r.size, r.containerNo, r.location, r.requestDate, r.ptiStatus, r.pickupStatus, r.pickupDate, r.temperature, r.vent, r.humidity, r.email, r.remarks, r.doorCheck || '', now, r.type || 'PTI');
             deleteOriginal.run(r.id);
         }
     });
@@ -200,12 +217,12 @@ app.post('/api/trash', (req, res) => {
 app.post('/api/trash/recover', (req, res) => {
     const record = req.body;
     const insert = db.prepare(`
-        INSERT INTO pti_records (id, shippingLine, customer, bookingNo, size, containerNo, location, requestDate, ptiStatus, pickupStatus, pickupDate, temperature, vent, humidity, email, remarks, type)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO pti_records (id, shippingLine, customer, bookingNo, size, containerNo, location, requestDate, ptiStatus, pickupStatus, pickupDate, temperature, vent, humidity, email, remarks, doorCheck, type)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const deleteFromTrash = db.prepare('DELETE FROM trash_records WHERE id = ?');
     const recover = db.transaction((r) => {
-        insert.run(r.id, r.shippingLine, r.customer, r.bookingNo, r.size, r.containerNo, r.location, r.requestDate, r.ptiStatus, r.pickupStatus, r.pickupDate, r.temperature, r.vent, r.humidity, r.email, r.remarks, r.type || 'PTI');
+        insert.run(r.id, r.shippingLine, r.customer, r.bookingNo, r.size, r.containerNo, r.location, r.requestDate, r.ptiStatus, r.pickupStatus, r.pickupDate, r.temperature, r.vent, r.humidity, r.email, r.remarks, r.doorCheck || '', r.type || 'PTI');
         deleteFromTrash.run(r.id);
     });
     recover(record);

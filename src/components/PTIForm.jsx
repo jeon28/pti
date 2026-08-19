@@ -25,7 +25,8 @@ export default function PTIForm({ record, data, onClose, onSave, standalone = fa
         vent: 'CLOSED',
         humidity: '',
         email: '',
-        remarks: ''
+        remarks: '',
+        doorCheck: ''
     });
 
     // Quantity and Container List logic
@@ -533,6 +534,17 @@ export default function PTIForm({ record, data, onClose, onSave, standalone = fa
                                 <option value="ICT">ICT</option>
                                 <option value="E1">E1</option>
                             </select>
+
+                            {/* Door Check */}
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.75rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                                <input
+                                    type="checkbox"
+                                    checked={formData.doorCheck === 'Y'}
+                                    onChange={(e) => setFormData(prev => ({ ...prev, doorCheck: e.target.checked ? 'Y' : '' }))}
+                                    style={{ width: 'auto', padding: 0, margin: 0, accentColor: 'var(--primary)', cursor: 'pointer' }}
+                                />
+                                Door Check
+                            </label>
                         </div>
 
                         {/* Booking No - Now in place of Shipping Line */}

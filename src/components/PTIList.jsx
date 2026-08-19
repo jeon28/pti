@@ -232,6 +232,14 @@ export default function PTIList({ records, onEdit, onDelete, onBulkDelete, onRef
         await onRefresh();
     };
 
+    const handleDoorCheckToggle = async (group) => {
+        const newValue = group[0].doorCheck === 'Y' ? '' : 'Y';
+        for (const r of group) {
+            await updatePTIRecord({ ...r, doorCheck: newValue });
+        }
+        await onRefresh();
+    };
+
     const toggleSelection = (bookingNo) => {
         const newSelection = new Set(selectedBookingNos);
         if (newSelection.has(bookingNo)) {
@@ -451,6 +459,7 @@ export default function PTIList({ records, onEdit, onDelete, onBulkDelete, onRef
                             <th style={{ width: '55px' }}>CY</th>
                             <th style={{ width: '135px' }}>Customer</th>
                             <th style={{ width: '130px' }}>Booking No</th>
+                            <th style={{ width: '60px', textAlign: 'center', fontSize: '0.7rem' }}>Door<br />Check</th>
                             <th>Container No</th>
                             <th style={{ width: '60px' }}>Size</th>
                             <th style={{ width: '100px', fontSize: '0.65rem' }}>℃/Vent/Hum</th>
@@ -467,7 +476,7 @@ export default function PTIList({ records, onEdit, onDelete, onBulkDelete, onRef
                     <tbody>
                         {groupedGroups.length === 0 ? (
                             <tr>
-                                <td colSpan="15" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
+                                <td colSpan="16" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
                                     No records found for current filters.
                                 </td>
                             </tr>
@@ -571,6 +580,14 @@ export default function PTIList({ records, onEdit, onDelete, onBulkDelete, onRef
                                             )}
                                         </td>
                                         <td style={{ padding: '0.2rem', fontSize: '0.85rem' }}>{record.bookingNo}</td>
+                                        <td style={{ padding: '0.2rem', textAlign: 'center' }} title="Door Check">
+                                            <input
+                                                type="checkbox"
+                                                checked={record.doorCheck === 'Y'}
+                                                onChange={() => handleDoorCheckToggle(group)}
+                                                style={{ cursor: 'pointer' }}
+                                            />
+                                        </td>
                                         <td style={{ padding: '0.2rem', fontWeight: 600, fontSize: '0.85rem' }}>
                                             {isGroup ? (
                                                 group.some(r => r.containerNo) ? (
